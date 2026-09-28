@@ -10,7 +10,7 @@ Each workload runs twice: the first round pays for whatever the prefix cache doe
 shows the warm number. Every round does one streaming request (for TTFT and the inter-token rhythm) and one
 non-streaming request (for the server's own `usage`, which is where the token counts below come from).
 
-    python3 bench/speed.py --base http://127.0.0.1:8080 --model swift-1.5
+    python3 bench/speed.py --base http://127.0.0.1:8083 --model swift-1.5
     python3 bench/speed.py --tokens 256 --rounds 3 --json bench/last.json
 """
 
@@ -99,7 +99,7 @@ def full_round(base: str, model: str, messages: list[dict], tokens: int) -> dict
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measure TTFT, prefill and decode speed from the client side.")
-    parser.add_argument("--base", default="http://127.0.0.1:8080")
+    parser.add_argument("--base", default="http://127.0.0.1:8083")
     parser.add_argument("--model", default="swift-1.5")
     parser.add_argument("--tokens", type=int, default=512, help="reply tokens per prose/code round")
     parser.add_argument("--context", type=int, default=2400, help="approximate prompt tokens for the prefill case")
