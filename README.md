@@ -19,6 +19,7 @@ checkpoint's vision tower is not read.
 | Upstream PR | [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) (draft) |
 | Base image | `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the extension compiler |
 | Endpoint | OpenAI-compatible on `:8080` (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
+| Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate for prose, code and a long prefill |
 
 Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `491b2ad837a30c6ef4815e587a65442f5f990f10`.
 
@@ -43,6 +44,7 @@ scripts/build.sh                     # build the image (local only, no registry)
 scripts/pull.sh                      # download the checkpoint: 186 GB, resumable
 scripts/serve.sh                     # foreground; Ctrl-C stops it
 scripts/smoke.sh                     # in another shell: health, /v1/models, one timed completion
+scripts/bench.sh                     # in another shell: prose, code and prefill speed
 ```
 
 Logs go to the terminal that runs `scripts/serve.sh`; `scripts/stop.sh` stops a detached run and an
@@ -109,6 +111,22 @@ Not verified yet, and worth reporting from a run here:
 - Throughput and memory peak on the Spark, and the effect of `--ple-on-ssd`.
 - One of the 128 n-gram shards is proven against real bytes; the other 127 are read by the same code path and
   each shard's header is checked at load time, a mixed layout raising rather than loading wrongly.
+
+## Measuring speed
+
+`scripts/bench.sh` (options: `TOKENS=256 scripts/bench.sh`, `EXTRA_BENCH_ARGS="--rounds 3 --json bench/last.json"`)
+drives three workloads through the client's own clock:
+
+- **prose** — a short French prompt asking for a 400-word essay: decode-bound.
+- **code** — a short prompt asking for a Python function with docstring and pytest cases: decode-bound, code distribution.
+- **prefill** — ~2,400 tokens of pasted context plus a one-line question: TTFT at scale.
+
+Each workload runs twice: the first round pays for whatever the prefix cache does not hold, the second shows
+the warm number. Every round makes one streaming request (TTFT and the inter-token rhythm) and one
+non-streaming request (the server's own `usage`, which is where the token counts come from). Reported:
+TTFT, `(completion_tokens - 1) / (stream total - TTFT)` for decode, `prompt_tokens / TTFT` for prefill (the
+first token's decode sits inside TTFT, so it is a slight underestimate), and the delta count against
+`completion_tokens` so the streaming rhythm can be sanity-checked.
 
 ## Troubleshooting
 

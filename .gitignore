@@ -1,5 +1,7 @@
 .env
 *.log
+bench/last-run.txt
+bench/last.json
 __pycache__/
 hf/
 state/
