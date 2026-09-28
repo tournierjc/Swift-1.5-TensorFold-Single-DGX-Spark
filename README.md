@@ -53,6 +53,14 @@ interrupted download.
 ## Serving on 128 GB
 
 The first `serve` compiles kernels (triton and torch extensions) into `STATE_DIR`; later starts reuse them.
+`scripts/preflight.py` prints the whole plan from the checkpoint's headers alone, in seconds, before any load —
+it runs the same estimate the engine runs first. Measured on this checkpoint (revision `3ff05202`): 97.39 GiB
+within a 104.28 GiB budget, native window 262,144 tokens, weights 78.54 GiB, loading 18.85 GiB, cache
+workspace 18.14 GiB, and the n-gram table at **95.37 GiB** — 102.4 GB over 128 shards in the BF16 layout this
+revision ships, three times the 29.8 GiB the MLX 4-bit layout takes. It does not fit beside the weights and
+caches, so its pages are read from disk during lookups; `--ple-on-ssd` makes that explicit instead of relying
+on the page cache.
+
 Then the levers, in `.env` as `EXTRA_ARGS`:
 
 - `--ple-on-ssd` — the n-gram tables stay in the checkpoint on disk instead of the host page cache: about
@@ -79,6 +87,10 @@ curl -fsS http://127.0.0.1:8080/v1/chat/completions \
 
 Built and checked on the DGX Spark this rig targets:
 
+- The first end-to-end run found a blocker and it is fixed on the branch at `ba6cb76`: the startup memory
+  estimate could not size the checkpoint's `F8_E4M3` block scales (73,728 tensors), so `serve` died in 15 s
+  with `CUDA startup memory geometry could not be established on every rank: 'F8_E4M3'`. After the fix the
+  estimate runs over the real headers and the load proceeds.
 - `scripts/build.sh` → image `swift-tensorfold:local`, 36.5 GB; `tensorfold --version` = 0.3.6.1 (from the
   pinned commit), and the build-time import of `families.qwen4_exp.cuda.nvfp4` — a module that exists only on
   this branch — passed, so a wrong ref fails at build time.
@@ -146,9 +158,12 @@ first token's decode sits inside TTFT, so it is a slight underestimate), and the
 ```
 Dockerfile              image: NVIDIA PyTorch + TensorFold (pinned ref), weights never baked in
 scripts/build.sh        docker build, then `tensorfold --version` and a branch-only import check
+scripts/preflight.py    header-only startup estimate: sizes the checkpoint without loading it, prints the plan
 scripts/pull.sh         resumable download into HF_DIR
 scripts/serve.sh        foreground serve with the Spark's mounts, caps and flags
 scripts/smoke.sh        health, model ids, one timed completion
+scripts/bench.sh        prose, code and prefill speed against a running server
+bench/speed.py          what bench.sh runs: streaming TTFT + the server's usage, two rounds a workload
 scripts/stop.sh         stop this rig's containers
 .env.sample             copy to .env: paths, port, HF token, EXTRA_ARGS
 ```
