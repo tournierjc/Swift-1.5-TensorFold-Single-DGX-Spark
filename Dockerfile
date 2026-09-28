@@ -12,7 +12,7 @@ FROM nvcr.io/nvidia/pytorch:26.07-py3
 # The revision under test. Pinned to the commit this repository was prepared against; override to test
 # another one:  TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
 ARG TF_REPO=https://github.com/tournierjc/TensorFold.git
-ARG TF_REF=6442f7e9b3ad7046ed60641965dbf1f99542b3ae
+ARG TF_REF=c17df8a6464d9d4c856941bf858fb9b310b7636e
 
 LABEL org.opencontainers.image.title="Swift 1.5 on TensorFold (single DGX Spark)" \
       org.opencontainers.image.source="https://github.com/tournierjc/Swift-1.5-TensorFold-Single-DGX-Spark" \

@@ -25,8 +25,16 @@ echo "[serve] ${MODEL}  ->  http://${HOST}:${PORT}/v1   (model id: ${NAME})"
 echo "[serve] flags: ${args[*]}"
 echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB snapshot comes from ${HF_DIR}"
 
+# The CUDA crash switches, forwarded only when set. TORCH_USE_CUDA_DSA=1 turns a bad access into a device-side
+# assert naming the kernel and line; PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True helps fragmentation.
+# CUDA_LAUNCH_BLOCKING=1 serialises launches, so keep it off while graphs are captured.
+docker_env=()
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF; do
+  [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
+done
+
 exec docker run --rm --name swift-tensorfold \
   --gpus all --ipc=host --network host --ulimit memlock=-1 --cap-add IPC_LOCK \
   -v "${HF_DIR}:/hf" -v "${STATE_DIR}:/state" -v "${MODELS_DIR}:/models:ro" \
-  -e HF_TOKEN -e HUGGING_FACE_HUB_TOKEN \
+  -e HF_TOKEN -e HUGGING_FACE_HUB_TOKEN "${docker_env[@]}" \
   "${IMAGE}" "${args[@]}"
