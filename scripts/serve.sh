@@ -33,6 +33,10 @@ for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 
+# A container of this name already running is either a live server or the corpse of a crashed one. Replace it:
+# otherwise docker refuses the run, serve.sh fails, and the caller's smoke test talks to the old process.
+docker rm -f swift-tensorfold >/dev/null 2>&1 || true
+
 exec docker run --rm --name swift-tensorfold \
   --gpus all --ipc=host --network host --ulimit memlock=-1 --cap-add IPC_LOCK \
   -v "${HF_DIR}:/hf" -v "${STATE_DIR}:/state" -v "${MODELS_DIR}:/models:ro" \
