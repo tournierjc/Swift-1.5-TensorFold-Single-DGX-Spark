@@ -19,6 +19,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Header-only CUDA startup estimate for a checkpoint directory.")
     parser.add_argument("model_dir")
     parser.add_argument("--drafts", type=int, default=6, help="MTP drafts a round (sets the rows the geometry sizes)")
+    parser.add_argument("--no-drafts", action="store_true",
+                        help="size the plan without the MTP head, as `serve --no-drafts` loads it")
     parser.add_argument("--context", type=int, default=None, help="explicit prompt-plus-reply window")
     parser.add_argument("--tp", type=int, default=1, choices=(1, 2))
     args = parser.parse_args(argv)
@@ -28,10 +30,11 @@ def main(argv: list[str] | None = None) -> int:
     from tensorfold.cuda.capacity import admit
     from tensorfold.cuda.geometry import gdn_geometry, indexed_weights
 
-    each = args.drafts + 1
+    each = 1 if args.no_drafts else args.drafts + 1
+    mtp = not args.no_drafts
     plan = admit(args.model_dir, args.context, args.context is not None, torch,
-                 lambda text: gdn_geometry(text, args.tp, each, indexed=True, mtp=True),
-                 indexed_weights(args.tp, True), rank=0, world=args.tp)
+                 lambda text: gdn_geometry(text, args.tp, each, indexed=True, mtp=mtp),
+                 indexed_weights(args.tp, mtp), rank=0, world=args.tp)
 
     print("\nreceipt:")
     for key, value in plan.items():
