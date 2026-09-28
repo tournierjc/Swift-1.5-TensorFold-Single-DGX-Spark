@@ -15,13 +15,13 @@ checkpoint's vision tower is not read.
 | | |
 | --- | --- |
 | Model | `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`, revision `3ff05202` — 186.4 GB over 296,474 tensors |
-| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `5ff6f13` (override with `TF_REF`) |
+| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `c0fdf96` (override with `TF_REF`) |
 | Upstream PR | [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) (draft) |
 | Base image | `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the extension compiler |
 | Endpoint | OpenAI-compatible on `:8083` (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
 | Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate for prose, code and a long prefill |
 
-Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `5ff6f135cc579b9d764ff1fc9e4a6a224fca42ec`.
+Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `c0fdf96bdacec10b9d393757400a2f9b15075a92`.
 
 The checkpoint's own `ple_embedding.ngram_embedding.shard_N.weight` tensors are BF16 `[2500012, 160]` rows with
 no per-shard scales — 128 shards, 320,001,536 rows, 29.8 GiB, memory-mapped and gathered a lookup at a time.
