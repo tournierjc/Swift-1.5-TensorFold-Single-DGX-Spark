@@ -2,7 +2,7 @@
 #
 #   scripts/build.sh                    build this image (local only, no registry)
 #   scripts/pull.sh                     download the checkpoint into the host's Hugging Face cache
-#   scripts/serve.sh                    serve it, foreground, OpenAI-compatible endpoint on :8080
+#   scripts/serve.sh                    serve it, foreground, OpenAI-compatible endpoint on :8083
 #
 # The image carries TensorFold and its dependencies only. Weights, the Hugging Face cache and the kernel
 # caches are host bind mounts, so rebuilding the image never re-downloads the 186 GB checkpoint.
@@ -12,7 +12,7 @@ FROM nvcr.io/nvidia/pytorch:26.07-py3
 # The revision under test. Pinned to the commit this repository was prepared against; override to test
 # another one:  TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
 ARG TF_REPO=https://github.com/tournierjc/TensorFold.git
-ARG TF_REF=637d5dff64ae9677234bcf2922e4bba7ff08ce4b
+ARG TF_REF=a11c6c008996de1807b8960a11c83b74374c64af
 
 LABEL org.opencontainers.image.title="Swift 1.5 on TensorFold (single DGX Spark)" \
       org.opencontainers.image.source="https://github.com/tournierjc/Swift-1.5-TensorFold-Single-DGX-Spark" \
@@ -39,6 +39,6 @@ RUN python3 -m pip install --no-cache-dir "tensorfold @ git+${TF_REPO}@${TF_REF}
 # /state kernel caches: triton, torch extensions, inductor    -> host bind
 # /models local checkpoints, read-only                        -> host bind
 WORKDIR /models
-EXPOSE 8080
+EXPOSE 8083
 ENTRYPOINT ["tensorfold"]
 CMD ["--help"]

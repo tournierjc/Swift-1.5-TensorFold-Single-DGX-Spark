@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 IMAGE="${IMAGE:-swift-tensorfold:local}"
 NAME="${NAME:-swift-1.5}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-8083}"
 TOKENS="${TOKENS:-512}"
 
 docker run --rm --network host \

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Serve the checkpoint in the foreground, OpenAI-compatible endpoint on $PORT (default 8080).
+# Serve the checkpoint in the foreground, OpenAI-compatible endpoint on $PORT (default 8083).
 # Ctrl-C stops it (or scripts/stop.sh when it runs detached).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 IMAGE="${IMAGE:-swift-tensorfold:local}"
 MODEL="${MODEL:-ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4}"
 HOST="${HOST:-0.0.0.0}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-8083}"
 NAME="${NAME:-swift-1.5}"
 HF_DIR="${HF_DIR:-$HOME/.cache/swift-tensorfold/hf}"
 STATE_DIR="${STATE_DIR:-$HOME/.cache/swift-tensorfold/state}"

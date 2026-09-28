@@ -15,13 +15,13 @@ checkpoint's vision tower is not read.
 | | |
 | --- | --- |
 | Model | `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`, revision `3ff05202` — 186.4 GB over 296,474 tensors |
-| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `491b2ad` (override with `TF_REF`) |
+| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `a11c6c0` (override with `TF_REF`) |
 | Upstream PR | [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) (draft) |
 | Base image | `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the extension compiler |
-| Endpoint | OpenAI-compatible on `:8080` (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
+| Endpoint | OpenAI-compatible on `:8083` (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
 | Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate for prose, code and a long prefill |
 
-Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `491b2ad837a30c6ef4815e587a65442f5f990f10`.
+Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `a11c6c008996de1807b8960a11c83b74374c64af`.
 
 The checkpoint's own `ple_embedding.ngram_embedding.shard_N.weight` tensors are BF16 `[2500012, 160]` rows with
 no per-shard scales — 128 shards, 320,001,536 rows, 29.8 GiB, memory-mapped and gathered a lookup at a time.
@@ -71,14 +71,14 @@ Then the levers, in `.env` as `EXTRA_ARGS`:
 - `--context N` — prompt plus reply window; the CUDA default is the affordable native capacity.
 - `--no-drafts` — the serial reference: same output, slower.
 
-Port 8080 here, 8083 in the vLLM rig — but only one of the two fits in memory at a time.
+Port **8083** here (matches the hermes-agent / historical Spark OpenAI endpoint). The vLLM sibling also used 8083 — only one of the two fits in memory at a time.
 
 ## Endpoint
 
 ```bash
-curl -fsS http://127.0.0.1:8080/health
-curl -fsS http://127.0.0.1:8080/v1/models
-curl -fsS http://127.0.0.1:8080/v1/chat/completions \
+curl -fsS http://127.0.0.1:8083/health
+curl -fsS http://127.0.0.1:8083/v1/models
+curl -fsS http://127.0.0.1:8083/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"swift-1.5","messages":[{"role":"user","content":"Say hello in one sentence."}],"max_tokens":128}'
 ```
@@ -91,7 +91,7 @@ Built and checked on the DGX Spark this rig targets:
   estimate could not size the checkpoint's `F8_E4M3` block scales (73,728 tensors), so `serve` died in 15 s
   with `CUDA startup memory geometry could not be established on every rank: 'F8_E4M3'`. After the fix the
   estimate runs over the real headers and the load proceeds.
-- `scripts/build.sh` → image `swift-tensorfold:local`, 36.5 GB; `tensorfold --version` = 0.3.6.1 (from the
+- `scripts/build.sh` → image `swift-tensorfold:local`, 36.5 GB; `tensorfold --version` = 0.3.6.2 (from the
   pinned commit), and the build-time import of `families.qwen4_exp.cuda.nvfp4` — a module that exists only on
   this branch — passed, so a wrong ref fails at build time.
 - Dependencies inside the image: hf-hub 1.24.0, tokenizers 0.23.1, safetensors 0.8.0, jinja2 3.1.6, numpy 2.1.0,

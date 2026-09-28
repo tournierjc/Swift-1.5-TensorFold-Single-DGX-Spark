@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ -f .env ]] && set -a && . ./.env && set +a
 
-PORT="${PORT:-8080}"
+PORT="${PORT:-8083}"
 NAME="${NAME:-swift-1.5}"
 BASE="http://127.0.0.1:${PORT}"
 
