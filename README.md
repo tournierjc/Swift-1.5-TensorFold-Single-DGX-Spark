@@ -75,6 +75,19 @@ curl -fsS http://127.0.0.1:8080/v1/chat/completions \
 
 ## Status of the engine under test
 
+Built and checked on the DGX Spark this rig targets:
+
+- `scripts/build.sh` → image `swift-tensorfold:local`, 36.5 GB; `tensorfold --version` = 0.3.6.1 (from the
+  pinned commit), and the build-time import of `families.qwen4_exp.cuda.nvfp4` — a module that exists only on
+  this branch — passed, so a wrong ref fails at build time.
+- Dependencies inside the image: hf-hub 1.24.0, tokenizers 0.23.1, safetensors 0.8.0, jinja2 3.1.6, numpy 2.1.0,
+  torch 2.13.0a0 (NVIDIA's 26.07 container).
+- `tensorfold info ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4` inside the image resolved the family from the
+  published `config.json`: `qwen4_exp`, 48 layers, 512 experts, `quantization modelopt`, "runs on NVIDIA GPUs
+  (CUDA)".
+- Hugging Face answers the repository listing anonymously from the Spark (100 files, 31 `embedding-model-*`),
+  so `scripts/pull.sh` needs no token today; keep `HF_TOKEN` in `.env` for the day that changes.
+
 The branch's CUDA suite runs green in the same container this image is built from: **460 passed, 70 skipped,
 0 failed** on a GB10 (upstream `main` 0.3.6.1 in that container: 429 passed, 70 skipped). Against the real
 published weights, checked in-process:
