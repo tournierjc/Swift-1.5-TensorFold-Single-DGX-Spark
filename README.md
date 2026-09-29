@@ -183,6 +183,13 @@ Not verified yet, and worth reporting from a run here:
   after. Quote a long reply: 128-token ones measure near 16 tok/s, because a round's drafting needs a few dozen
   rounds to reach its steady acceptance and a short reply is mostly that ramp. The bench's 39.8 and 75.8 are
   steady-state lines, not best cases.
+- **Set `--parallel N` to serve more than one session at a time.** On CUDA the default `auto` means one request
+  decoded at a time and the rest waiting their turn, which costs N times the wall time with no gain: two clients
+  took 11.0 s and four a 5.5 s staircase, aggregate 38.1 then 22.2 tok/s against 35.0 for one. An explicit
+  number batches instead, and since a round is weight-bound the lanes share those reads nearly for free -
+  30.7 / 63.7 / 99.4 tok/s aggregate for 1 / 2 / 4 concurrent clients, at 6.8 / 6.6 / 8.4 s each (2.1x and 3.2x
+  the throughput for 24% more latency). The lanes share the slot pool, so N lanes of `--context C` need
+  N x C slots at about 4.8 KB each: four lanes of 65536 fit the 262150 this rig reports.
 - **A repeated conversation is re-prefilled every turn.** Five identical 20k requests all reported `cached=0`,
   with and without a client `user` field. The prefix cache is a CLI and server feature (`--prompt-cache-gib`,
   `--checkpoint-slots`, `--spill-gib`) that this CUDA family does not implement: the names appear in `cli.py`,

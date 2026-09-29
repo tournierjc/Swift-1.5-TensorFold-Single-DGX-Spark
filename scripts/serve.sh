@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 # replaced them (a build asked for 1911880 came out as .env's pinned b4bf826, and the image it produced was
 # the pinned one). The values that were in the environment are put back over .env's.
 caller=()
-for var in IMAGE MODEL NAME HOST PORT CONTEXT EXTRA_ARGS; do
+for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -25,6 +25,12 @@ NAME="${NAME:-swift-1.5}"
 # 2275-token prompt measures 1509-1533 tok/s at the full native 262144 and at 8192 alike (three runs each), and
 # the full native window costs about 1.2 GiB more than an 8k one. Unset is what a server people talk to wants.
 CONTEXT="${CONTEXT:-}"
+# PARALLEL is worth setting: on CUDA the server's own default is one request decoded at a time, the others
+# queued, so N sessions cost N times the wall time. An explicit number batches them - four concurrent clients
+# measured 99.4 tok/s aggregate against 30.7 for one, at 8.4 s against 6.8 s each - because a round is
+# weight-bound and the lanes share its reads. Lanes share the slot pool, so N lanes of --context C want N x C
+# slots at about 4.8 KB each.
+PARALLEL="${PARALLEL:-}"
 HF_DIR="${HF_DIR:-$HOME/.cache/swift-tensorfold/hf}"
 STATE_DIR="${STATE_DIR:-$HOME/.cache/swift-tensorfold/state}"
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
@@ -34,6 +40,7 @@ mkdir -p "${HF_DIR}" "${STATE_DIR}" "${MODELS_DIR}"
 args=(serve "${MODEL}" --host "${HOST}" --port "${PORT}" --name "${NAME}"
       --snapshot-dir /state/snapshots --no-update-check)
 [[ -n "${CONTEXT}" ]] && args+=(--context "${CONTEXT}")
+[[ -n "${PARALLEL}" ]] && args+=(--parallel "${PARALLEL}")
 # shellcheck disable=SC2206  # EXTRA_ARGS is deliberately word-split: it holds serve flags
 [[ -n "${EXTRA_ARGS:-}" ]] && args+=(${EXTRA_ARGS})
 
