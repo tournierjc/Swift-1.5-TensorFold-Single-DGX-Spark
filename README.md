@@ -72,10 +72,14 @@ on the page cache.
 
 Then the levers, in `.env` as `EXTRA_ARGS`:
 
-- `--ple-on-ssd` — the n-gram tables stay in the checkpoint on disk instead of the host page cache: about
-  40 GiB less at peak for a few percent of decode speed. This is the first thing to try if the load is tight.
 - `--ssd-experts 90` — stream routed experts into a 90 GiB GPU pool for models past the memory budget.
-- `--mtp-drafts 10 --mtp-confidence 0.20 --no-thinking --context 8192` — Spark defaults: MTP for decode, answers in chat `content`, and an 8k window so unified memory has headroom for hermes-agent beside the weights; drafts `0` disables drafting.
+- `--mtp-drafts 5 --mtp-confidence 0.20 --no-thinking --context 8192` — what this rig serves: MTP for decode,
+  answers in chat `content`, and an 8k window so unified memory has headroom for hermes-agent beside the
+  weights; drafts `0` disables drafting. Five rather than ten because prose accepts about 2.5 drafts a round
+  and code about 5.5 at the same round cost (table above); ten costs prose 3.5 tok/s and buys code nothing.
+- `--ple-on-ssd` — refused for an NVFP4 checkpoint on 0.3.6.3 (`serve` exits 1 before the weights load; the
+  tables stay memory-mapped here, see Troubleshooting). It applies to the MLX checkpoint's n-gram shards, where
+  it is worth about 40 GiB at peak for a few percent of decode speed.
 - `--parallel 2` — two requests decoded together, windows sharing each round's forward (Flash Next, one rank).
 - `--context N` — prompt plus reply window; the CUDA default is the affordable native capacity.
 - `--no-drafts` — the serial reference: same output, slower.
@@ -131,14 +135,29 @@ streamed chunk (which on this checkpoint is `reasoning_content`, not `content`),
 
 | workload | prompt tok | decode | prefill | TTFT |
 | --- | --- | --- | --- | --- |
-| prose (400-word essay) | 78 | **29.4 tok/s** | — | 0.23 s |
-| code (`merge_intervals` + pytest) | 99 | **35.4 tok/s** | — | 0.24 s |
-| 4050 tokens of context, one-line question | 4050 | 39.4 tok/s | **1263–1270 tok/s** | 3.19 s |
+| prose (400-word essay) | 37 | **26.4 tok/s** | — | 0.16 s |
+| code (`merge_intervals` + pytest) | 59 | **54.5 tok/s** | — | 0.19 s |
+| 2275 tokens of context, one-line question | 2275 | 32.7 tok/s | **1190 tok/s** | 1.91 s |
 
-Against the `b4bf826` ref this rig had been serving, same checkpoint and client: prose 17.9 → 29.4 tok/s,
-code 27.6 → 35.4, prefill 798 → 1263 (the non-stream totals of `scripts/bench.sh` agree: 14.52 → 9.58 s,
-9.62 → 6.25 s, 5.90 → 4.01 s). The targets this rig was pointed at are prose 30 / code 45 / prefill 1000:
-**prefill clears it, prose is 2% short, code is 21% short.**
+Against the `b4bf826` ref this rig had been serving, same checkpoint and profile: prose 17.9 → 26.4 tok/s,
+code 27.6 → 54.5, prefill 798 → 1190 (the non-stream totals of `scripts/bench.sh` agree: 14.52 → 9.83 s,
+9.62 → 4.87 s, 5.90 → 3.42 s). The targets this rig was pointed at are prose 30 / code 45 / prefill 1000:
+**code and prefill clear them, prose reaches 88% of it.**
+
+**The draft window this rig carries is the prose lever.** `--mtp-drafts 10` was tuned on the branch, where a
+round cost less; on 0.3.6.3 the same window pays for a wider verification of drafts that prose does not
+accept. Sweeping it on the warm server, same checkpoint and everything else fixed:
+
+| `--mtp-drafts` | prose | code | prefill |
+| --- | --- | --- | --- |
+| 10 | 22.9 | 53.8 | 1175 |
+| 5 | **26.4** | **54.5** | **1190** |
+| 3 | 27.3 | 42.8 | 1117 |
+
+Three drafts buy nothing over five on prose and cost code a fifth of its rate, so the rig now serves five.
+Prose accepts roughly 2.5 drafts a round against code's 5.5, at the same round cost - which is why the
+window that suits code over-pays on prose, and why the next gain here is the draft head's acceptance rather
+than bandwidth.
 
 Not verified yet, and worth reporting from a run here:
 
