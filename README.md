@@ -166,10 +166,39 @@ which is what prose's drafts are, and leaves a confident chain alone. So the rig
 
 Not verified yet, and worth reporting from a run here:
 
-- The 95.4 GiB of n-gram tables do not fit beside the weights, so every lookup pages from disk; the effect of
-  `--ple-on-ssd` and of a smaller `--context` on throughput is unmeasured here.
+- The 95.4 GiB of n-gram tables do not fit beside the weights, so every lookup pages from disk. Measured on
+  the served endpoint: decode reads **0.6-0.8 KiB per token from storage**, so the paging is not a throughput
+  factor at this window. (`--ple-on-ssd` is refused for an NVFP4 checkpoint - `serve` exits 1 - and a smaller
+  `--context` buys memory headroom without a measured effect on rate.)
 - One of the 128 n-gram shards is proven against real bytes; the other 127 are read by the same code path and
   each shard's header is checked at load time, a mixed layout raising rather than loading wrongly.
+
+**The dense BF16 faces are the round's other half, and an 8-bit copy of them pays.** This checkpoint quantizes
+only the routed experts: a layer is 1200 MiB of NVFP4 experts and 150 MiB of e4m3 scales against **147.6 MiB
+of BF16**, 110 MiB of it the DeltaNet and attention projections. A round verifies a handful of rows, so those
+dense faces are re-read whole every round however few tokens come out of it - **6.9 GiB a round**, and 53% of
+the round's device time in `_b16mm` (a full `block_n`/`bk`/`warps`/`stages` sweep at 7 rows buys 5%, so the
+matmul is not mistuned: it is reading bytes). `TENSORFOLD_FACES_FP8=1` loads those projections with an 8-bit
+copy a round reads instead of the rows (prompts keep the rows), and the same client then measures:
+
+| `TENSORFOLD_FACES_FP8` | prose | code | prefill |
+| --- | --- | --- | --- |
+| off | 27.2 | 54.6 | 1181 |
+| `1` | **32.2** | **63.6** | 1196 |
+
+The server's own round counters move with it: prose 76.4 -> 73.6 ms a round at 2.19 tokens, code 83.8 -> 76.7
+ms at 4.57. `all` extends the copy to every BF16 face and was **not** kept - it cuts the round further, but
+the router, hyper-connections and shared expert steer which experts run and how the streams mix, so the
+drafts' head (calibrated to the BF16 body) accepts 48% where it accepted 64% and the end-to-end number does
+not move. The lm_head's rows never get a copy for the same reason: the drafts' head is a quantized copy of
+those very rows (0 of 63 drafts accepted once they were coarsened, replies garbled).
+
+**45 tok/s on prose is out of reach for this checkpoint on this box.** A round's bytes - 6.9 GiB of dense
+faces plus ~7.3 GB of routed experts - are ~49 ms at the GB10's 273 GB/s and the kernels already run at ~60%
+of peak, while prose accepts 2.19 tokens a round: 45 tok/s would need a 48 ms round at 100% of peak. The 4-bit
+checkpoint of the same model (Vontra's MLX-4bit, 4-bit throughout; upstream's own table has it at 62.7 chat /
+76.5 code on one Spark) is where that rate comes from, so the remaining gap to 60 is the checkpoint's layout,
+not the engine.
 
 ## Measuring speed
 
