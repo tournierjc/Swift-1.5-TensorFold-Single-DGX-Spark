@@ -29,7 +29,9 @@ CONTEXT="${CONTEXT:-}"
 # queued, so N sessions cost N times the wall time. An explicit number batches them - four concurrent clients
 # measured 99.4 tok/s aggregate against 30.7 for one, at 8.4 s against 6.8 s each - because a round is
 # weight-bound and the lanes share its reads. Lanes share the slot pool, so N lanes of --context C want N x C
-# slots at about 4.8 KB each.
+# slots at about 4.8 KB each. With more than one lane the window may also be *silently* clamped instead of
+# refused - `--parallel 3 --context 262144` was accepted and then allocated 8192 - so read the server's
+# "allocated prompt/reply window" line in the log after starting, not the flags you passed.
 PARALLEL="${PARALLEL:-}"
 HF_DIR="${HF_DIR:-$HOME/.cache/swift-tensorfold/hf}"
 STATE_DIR="${STATE_DIR:-$HOME/.cache/swift-tensorfold/state}"

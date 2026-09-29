@@ -190,6 +190,13 @@ Not verified yet, and worth reporting from a run here:
   30.7 / 63.7 / 99.4 tok/s aggregate for 1 / 2 / 4 concurrent clients, at 6.8 / 6.6 / 8.4 s each (2.1x and 3.2x
   the throughput for 24% more latency). The lanes share the slot pool, so N lanes of `--context C` need
   N x C slots at about 4.8 KB each: four lanes of 65536 fit the 262150 this rig reports.
+- **Always read the startup line's allocated window, never the flag you passed.** With more than one lane the
+  budget is asked for N x C and the answer is not always a refusal: `--parallel 4 --context 262144` was refused
+  with "estimated largest fitting prompt-plus-reply window: 198779 tokens", while `--parallel 3 --context
+  262144` was *accepted* and then allocated **8192** - the safe fallback - with no error anywhere except that
+  line. An 8192 window is what makes a normal conversation fail with HTTP 400 "no room for a reply", so a
+  silent clamp looks exactly like a broken model. Check `allocated prompt/reply window` in the log after every
+  serve that sets `--context` with `--parallel`.
 - **A repeated conversation is re-prefilled every turn.** Five identical 20k requests all reported `cached=0`,
   with and without a client `user` field. The prefix cache is a CLI and server feature (`--prompt-cache-gib`,
   `--checkpoint-slots`, `--spill-gib`) that this CUDA family does not implement: the names appear in `cli.py`,
