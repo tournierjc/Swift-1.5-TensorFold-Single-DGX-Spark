@@ -190,6 +190,10 @@ Not verified yet, and worth reporting from a run here:
   30.7 / 63.7 / 99.4 tok/s aggregate for 1 / 2 / 4 concurrent clients, at 6.8 / 6.6 / 8.4 s each (2.1x and 3.2x
   the throughput for 24% more latency). The lanes share the slot pool, so N lanes of `--context C` need
   N x C slots at about 4.8 KB each: four lanes of 65536 fit the 262150 this rig reports.
+- **The three-session server this rig runs**: `--parallel 3 --context 196608`, granted as asked (98.83 GiB within
+  105.03, 196614 slots). Measured there: **31.5 / 63.6 / 85.9 tok/s aggregate for 1 / 2 / 3 concurrent clients**
+  at 6.6 / 6.6 / 7.3 s each, a fourth queuing at 13.3 s, and a 20,020-token prompt answering in 13.0 s. Asking
+  for 262144 instead of 196608 is accepted and then clamped to 8192 - see the note below.
 - **Always read the startup line's allocated window, never the flag you passed.** With more than one lane the
   budget is asked for N x C and the answer is not always a refusal: `--parallel 4 --context 262144` was refused
   with "estimated largest fitting prompt-plus-reply window: 198779 tokens", while `--parallel 3 --context
