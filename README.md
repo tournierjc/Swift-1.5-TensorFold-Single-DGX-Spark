@@ -184,7 +184,14 @@ copy a round reads instead of the rows (prompts keep the rows), and the same cli
 | `TENSORFOLD_FACES_FP8` | prose | code | prefill |
 | --- | --- | --- | --- |
 | off | 27.2 | 54.6 | 1181 |
-| `1` | **32.2** | **63.6** | 1196 |
+| `1` | 32.2 | 63.6 | 1196 |
+| `1`, with the 16-pair multi-row item below | **40.0** | **75.8** | **1486** |
+| `4`, same | 38.5 | 73.5 | 1496 |
+
+`4` copies the same projections affine group-of-32 (0.31x the stored bytes against 0.39x for e4m3) and is **not**
+kept: fewer bytes, but the affine lane is slower a byte than the e4m3 one, and the round ends up 4% longer on
+prose and 3% on code. The same reason `all` failed - on this chip the quantized lanes' efficiency does not scale
+with the narrower format, so `1` is the end of that road and the bytes left are the ones that are already cheap.
 
 The server's own round counters move with it: prose 76.4 -> 73.6 ms a round at 2.19 tokens, code 83.8 -> 76.7
 ms at 4.57. `all` extends the copy to every BF16 face and was **not** kept - it cuts the round further, but
@@ -193,32 +200,55 @@ drafts' head (calibrated to the BF16 body) accepts 48% where it accepted 64% and
 not move. The lm_head's rows never get a copy for the same reason: the drafts' head is a quantized copy of
 those very rows (0 of 63 drafts accepted once they were coarsened, replies garbled).
 
-**The targets are reached by the 4-bit checkpoint, measured here.** Vontra/Qwen3.8-Flash-Next-MLX-4bit-MTP
+**The multi-row item holds 16 pairs, not 64, and that is worth 24%.** ``Plan`` gives each item 16 pairs when the
+arithmetic is the decode form and 64 in the prefill form, and the kernel holds only those two. Measured at a
+prompt's own row count (2275 x 10 pairs over 512 experts, `dev/moe_tile.py`): a 64-pair item reads 549 items of
+the stack in **21.00 ms**, a 16-pair item reads 1788 items in **14.09 ms**. The fatter item buys 3x less traffic
+that turns out to be L2 hits anyway (351 GB/s against the GB10's ~273 GB/s of DRAM), and pays for it with 3x
+fewer items competing for the SMs. Since the verify window of a decoding round runs the same multi-row
+arithmetic a prompt does, the change moves everything at once, served on the published checkpoint:
+
+| item | prose | code | prefill |
+| --- | --- | --- | --- |
+| 64 pairs (upstream's default) | 32.2 | 63.6 | 1196 |
+| **16 pairs** | **40.0** | **75.8** | **1486** |
+
+Those two rows are the *mounted tree* (`-v .../dev/port/src:/work/src -e PYTHONPATH=/work/src`); the released
+image predates the item and still serves the 64-pair row. `scripts/build.sh` on the branch replaces the image
+and the item becomes the default, no env needed.
+
+**The 4-bit checkpoint is the remaining reference, measured here.** Vontra/Qwen3.8-Flash-Next-MLX-4bit-MTP
 (4-bit throughout, 29.8 GiB of n-gram tables), same rig, same client, upstream's defaults (`--no-thinking
 --context 8192`, six drafts):
 
 | checkpoint | prose | code | prefill | loaded | start-up |
 | --- | --- | --- | --- | --- | --- |
-| ukisai NVFP4 + `TENSORFOLD_FACES_FP8=1` | 32.2 | 63.6 | 1196 | 97.39 GiB | 548 s |
+| ukisai NVFP4, `TENSORFOLD_FACES_FP8=1`, 16-pair items | 40.0 | 75.8 | 1486 | 97.39 GiB | 548 s |
 | Vontra MLX-4bit | **50.1** | **97.7** | **2024** | 84.26 GiB | 271 s |
 
 Its round is 49.2 ms against 73.6 ms on prose - and it accepts *fewer* drafts (25% against 31%), so the whole
 difference is bytes a round reads, which is the point: the NVFP4 checkpoint's dense linears stay BF16. Prefill
-separates even further (2024 against 1196, +69%): decode reads 0.6-0.8 KiB per token from the tables, but a
-prompt of a few thousand tokens reads them hard enough that the 95.4 GiB of tables paging from disk against
-29.8 GiB resident is what the prompt pays for.
+separated by more (+69%) only against the mistuned item: with the 16-pair item it is 1486 against 2024 (+36%),
+and the gap is the dense linears again - 4-bit throughout against BF16 rows re-read whole (prompts keep the
+rows by design, so an 8-bit copy does not help a prompt either). The tables are not it: decode reads 0.6-0.8
+KiB a token from them, and a 2275-token prompt pulls about 1.6 MB, a millisecond.
 
 `tensorfold serve Vontra/Qwen3.8-Flash-Next-MLX-4bit-MTP --name swift-1.5 --host 0.0.0.0 --port 8083
 --no-update-check --no-thinking --context 8192` serves it (the container needs the HF cache mounted and
 `HF_HOME` pointing at it). Switch back to the NVFP4 checkpoint when byte-exact agreement with serial decoding
 on that checkpoint's own format is what matters.
 
-**45 tok/s on prose is out of reach for the NVFP4 checkpoint on this box.** Its round carries ~7.3 GB of
-routed experts plus the dense faces it re-reads (6.9 GiB of stored BF16, 2.76 GB with the 8-bit copies above),
-and those bytes at the GB10's 273 GB/s are already ~49 ms once the kernels run at their measured ~60% of peak,
-while prose accepts 2.19 tokens a round: 45 tok/s would need a 48 ms round at 100% of peak on every byte. The
-same model converted 4-bit throughout does it (table above) - the gap is the checkpoint's layout, not the
-engine, and the engine work here is what closes as much of it as load-time requantization can.
+**45 tok/s on prose is the next 11%**, and what is left of it is host, not bytes. The round's device work is
+~7.3 GB of routed experts plus the dense faces a round re-reads (6.9 GiB of stored BF16, 2.76 GB with the
+8-bit copies above), and the projected profile shows what is left after them: 37.6 ms of kernels in a 59.6 ms
+round, so ~15 ms a round is the host between graph replays - and the CPU profile names it. Per round the
+forward gathers 72 n-gram rows through numpy's mmap and issues 22.6 pageable copies, and the thread pool that
+serves them is where the round blocks; everything under 0.5 ms a launch amounts to 0.3 ms a round, so it is
+not launch overhead and not small kernels. Read-ahead exists in the tree but for *prompt* chunks
+(`families/qwen4_exp/runtime.py`, `engine/family_prefill.py`) and as a start-up page warm-up
+(`engine.py`); the decode round's gather at `forward.py:244` is synchronous. Dispatching it for the round's
+own ids before the verify is the change that closes prose, and it is a hot-loop one. The same model converted
+4-bit throughout still leads (table above) - that gap is the checkpoint's layout, not the engine.
 
 ## Measuring speed
 
