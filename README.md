@@ -135,14 +135,14 @@ streamed chunk (which on this checkpoint is `reasoning_content`, not `content`),
 
 | workload | prompt tok | decode | prefill | TTFT |
 | --- | --- | --- | --- | --- |
-| prose (400-word essay) | 37 | **26.4 tok/s** | — | 0.16 s |
-| code (`merge_intervals` + pytest) | 59 | **54.5 tok/s** | — | 0.19 s |
-| 2275 tokens of context, one-line question | 2275 | 32.7 tok/s | **1190 tok/s** | 1.91 s |
+| prose (400-word essay) | 37 | **27.2 tok/s** | — | 0.16 s |
+| code (`merge_intervals` + pytest) | 59 | **54.6 tok/s** | — | 0.20 s |
+| 2275 tokens of context, one-line question | 2275 | 32.9 tok/s | **1181 tok/s** | 1.93 s |
 
-Against the `b4bf826` ref this rig had been serving, same checkpoint and profile: prose 17.9 → 26.4 tok/s,
-code 27.6 → 54.5, prefill 798 → 1190 (the non-stream totals of `scripts/bench.sh` agree: 14.52 → 9.83 s,
-9.62 → 4.87 s, 5.90 → 3.42 s). The targets this rig was pointed at are prose 30 / code 45 / prefill 1000:
-**code and prefill clear them, prose reaches 88% of it.**
+Against the `b4bf826` ref this rig had been serving, same checkpoint and profile: prose 17.9 → 27.2 tok/s,
+code 27.6 → 54.6, prefill 798 → 1181 (the non-stream totals of `scripts/bench.sh` agree: 14.52 → 9.53 s,
+9.62 → 4.86 s, 5.90 → 3.41 s). The targets this rig was pointed at are prose 30 / code 45 / prefill 1000:
+**code and prefill clear them, prose reaches 91% of it.**
 
 **The draft window this rig carries is the prose lever.** `--mtp-drafts 10` was tuned on the branch, where a
 round cost less; on 0.3.6.3 the same window pays for a wider verification of drafts that prose does not
@@ -158,6 +158,11 @@ Three drafts buy nothing over five on prose and cost code a fifth of its rate, s
 Prose accepts roughly 2.5 drafts a round against code's 5.5, at the same round cost - which is why the
 window that suits code over-pays on prose, and why the next gain here is the draft head's acceptance rather
 than bandwidth.
+
+`--mtp-confidence` is the other half of that trade-off, and it pays off without a cost: on five drafts, 0.30
+against the 0.20 this rig carried gives prose 27.2 against 26.4 tok/s while code (54.6 against 54.5) and
+prefill (1181 against 1190) do not move - a higher threshold stops a chain where the draft head is unsure,
+which is what prose's drafts are, and leaves a confident chain alone. So the rig serves 5 drafts at 0.30.
 
 Not verified yet, and worth reporting from a run here:
 
