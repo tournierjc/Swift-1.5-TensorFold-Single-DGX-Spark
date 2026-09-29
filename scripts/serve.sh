@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 # replaced them (a build asked for 1911880 came out as .env's pinned b4bf826, and the image it produced was
 # the pinned one). The values that were in the environment are put back over .env's.
 caller=()
-for var in IMAGE MODEL NAME HOST PORT EXTRA_ARGS; do
+for var in IMAGE MODEL NAME HOST PORT CONTEXT EXTRA_ARGS; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -19,6 +19,12 @@ MODEL="${MODEL:-ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8083}"
 NAME="${NAME:-swift-1.5}"
+# The window is prompt plus reply, and unset is the CUDA's own affordable native capacity - what a server that
+# people talk to wants, since a long conversation needs room and only prefill feels the difference. The benches
+# in the README pin CONTEXT=8192 instead, because those numbers were taken there and a window is not free: the
+# engine bounds the attention launches by it, so a 2275-token prompt measured 1498 tok/s at 8192 and 1088 at
+# 65536 on this rig.
+CONTEXT="${CONTEXT:-}"
 HF_DIR="${HF_DIR:-$HOME/.cache/swift-tensorfold/hf}"
 STATE_DIR="${STATE_DIR:-$HOME/.cache/swift-tensorfold/state}"
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
@@ -27,6 +33,7 @@ mkdir -p "${HF_DIR}" "${STATE_DIR}" "${MODELS_DIR}"
 
 args=(serve "${MODEL}" --host "${HOST}" --port "${PORT}" --name "${NAME}"
       --snapshot-dir /state/snapshots --no-update-check)
+[[ -n "${CONTEXT}" ]] && args+=(--context "${CONTEXT}")
 # shellcheck disable=SC2206  # EXTRA_ARGS is deliberately word-split: it holds serve flags
 [[ -n "${EXTRA_ARGS:-}" ]] && args+=(${EXTRA_ARGS})
 

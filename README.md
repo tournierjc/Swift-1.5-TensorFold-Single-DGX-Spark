@@ -74,8 +74,12 @@ Then the levers, in `.env` as `EXTRA_ARGS`:
 
 - `--ssd-experts 90` — stream routed experts into a 90 GiB GPU pool for models past the memory budget.
 - `--mtp-drafts 5 --mtp-confidence 0.20 --no-thinking --context 8192` — what this rig serves: MTP for decode,
-  answers in chat `content`, and an 8k window so unified memory has headroom for hermes-agent beside the
-  weights; drafts `0` disables drafting. Five rather than ten because prose accepts about 2.5 drafts a round
+  answers in chat `content`, and `CONTEXT=N` for the prompt-plus-reply window. Leave the window unset for a
+  server people talk to: the CUDA default is the affordable native capacity, and a long conversation needs
+  room. The 8k this rig pinned was for headroom beside hermes-agent, which measurement says is not needed -
+  65536 loaded at 97.39 GiB within 105.12 with hermes-agent running - and an 8k window is what broke an
+  18,758-token session with HTTP 400 (no room for a reply). The benches here pin `CONTEXT=8192` because their
+  numbers were taken there and a window is not free; drafts `0` disables drafting. Five rather than ten because prose accepts about 2.5 drafts a round
   and code about 5.5 at the same round cost (table above); ten costs prose 3.5 tok/s and buys code nothing.
 - `--ple-on-ssd` — refused for an NVFP4 checkpoint on 0.3.6.3 (`serve` exits 1 before the weights load; the
   tables stay memory-mapped here, see Troubleshooting). It applies to the MLX checkpoint's n-gram shards, where
@@ -169,7 +173,8 @@ Not verified yet, and worth reporting from a run here:
 - The 95.4 GiB of n-gram tables do not fit beside the weights, so every lookup pages from disk. Measured on
   the served endpoint: decode reads **0.6-0.8 KiB per token from storage**, so the paging is not a throughput
   factor at this window. (`--ple-on-ssd` is refused for an NVFP4 checkpoint - `serve` exits 1 - and a smaller
-  `--context` buys memory headroom without a measured effect on rate.)
+  the window is not free: the engine bounds the attention launches by it, so the same 2275-token prompt
+  measured **1498 tok/s at `--context 8192` and 1088 at 65536**, while decode did not move.)
 - One of the 128 n-gram shards is proven against real bytes; the other 127 are read by the same code path and
   each shard's header is checked at load time, a mixed layout raising rather than loading wrongly.
 
