@@ -15,15 +15,22 @@ checkpoint's vision tower is not read.
 | | |
 | --- | --- |
 | Model | `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`, revision `3ff05202` — 186.4 GB over 296,474 tensors |
-| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `36a5bc46bf77f8d34984fd59d979a7d1391567d5` (override with `TF_REF`) |
-| Upstream PR | [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) (draft) |
+| Engine | `ashhart/TensorFold@main`, pinned to `191188075bca56a7c71074a79375eb4c1cb22e1c` (0.3.6.3, override with `TF_REF`) |
+| Upstream PR | [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) (merged as 0.3.6.3) |
 | Base image | `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the extension compiler |
 | Endpoint | OpenAI-compatible on `:8083` (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
 | Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate for prose, code and a long prefill |
 
-Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `36a5bc46bf77f8d34984fd59d979a7d1391567d5`.
+Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `191188075bca56a7c71074a79375eb4c1cb22e1c`.
 
-**Quality (tip `36a5bc4`):** ModelOpt NVFP4 dequant is `W = E2M1 * fp32(e4m3) * weight_scale_2` (no extra `2**-7`). Chat on `:8083` with `--no-thinking` returns real `content` (Paris / 42). Prior empty/`im_end` loops were from the erroneous `2**-7` scale.
+**Quality:** ModelOpt NVFP4 dequant is `W = E2M1 * fp32(e4m3) * weight_scale_2` (no extra `2**-7`). This rig's own
+pinned fix for that factor was `36a5bc4` on the fork; upstream fixed the same formula on top of the merge and
+0.3.6.3 carries it, along with the grouped NVFP4 MoE that reads the routing plan on the GPU. Prior empty/`im_end`
+loops came from the erroneous `2**-7` scale; with either fix the replies read as text.
+
+On 0.3.6.3 the reply streams as `reasoning_content` and leaves `content` null until the thinking budget is spent,
+so a client that reads only `delta.content` sees an empty stream, counts `deltas=0` and has no TTFT. `--no-thinking`
+puts the text back in `content`; a benchmark that wants the first token's time should read either field.
 
 The checkpoint's own `ple_embedding.ngram_embedding.shard_N.weight` tensors are BF16 `[2500012, 160]` rows with
 no per-shard scales — 128 shards, 320,001,536 rows, 29.8 GiB, memory-mapped and gathered a lookup at a time.
@@ -104,9 +111,10 @@ Built and checked on the DGX Spark this rig targets:
 - Hugging Face answers the repository listing anonymously from the Spark (100 files, 31 `embedding-model-*`),
   so `scripts/pull.sh` needs no token today; keep `HF_TOKEN` in `.env` for the day that changes.
 
-The branch's CUDA suite runs green in the same container this image is built from: **460 passed, 70 skipped,
-0 failed** on a GB10 (upstream `main` 0.3.6.1 in that container: 429 passed, 70 skipped). Against the real
-published weights, checked in-process:
+0.3.6.3's CUDA suite runs green in the same container this image is built from: **728 passed, 75 skipped,
+0 failed** on a GB10 (the `nvfp4-flash-next` branch this rig pinned before it, 0.3.6.2: 460 passed, 70
+skipped, 0 failed; with the reduce and `_fp4mm` changes below in, 728/75/0 again). Against the real published
+weights, checked in-process:
 
 - 16 routed experts bit-exact against the reference dequantization; FP4 matmul error 2.6e-3 / 2.3e-3; BF16
   faces 2.9e-3; row invariance from 1 to 64 rows; 512 MTP experts exact; the n-gram hashing constants equal
@@ -115,14 +123,27 @@ published weights, checked in-process:
   bit-identical to an independent read of the file, and 128 shards of that size make the 320,001,536-row
   table the digest derives.
 
+**Measured on this rig on 0.3.6.3 (`1911880`), the complete 186 GB checkpoint, one DGX Spark:** the load runs
+end to end — `97.39 GiB within 105.04 GiB`, a 262144-token window, 21 decode graphs captured, the 95.4 GiB of
+mapped tables paged from disk, n-gram tables read in 291 s, loaded in 545 s. Greedy, TTFT from the first
+streamed chunk (which on this checkpoint is `reasoning_content`, not `content`), decode as
+`(completion - 1) / (total - TTFT)`, prefill as `prompt / TTFT`, two rounds each, identical across rounds:
+
+| workload | prompt tok | decode | prefill | TTFT |
+| --- | --- | --- | --- | --- |
+| prose (400-word essay) | 78 | **29.4 tok/s** | — | 0.23 s |
+| code (`merge_intervals` + pytest) | 99 | **35.4 tok/s** | — | 0.24 s |
+| 4050 tokens of context, one-line question | 4050 | 39.4 tok/s | **1263–1270 tok/s** | 3.19 s |
+
+Against the `b4bf826` ref this rig had been serving, same checkpoint and client: prose 17.9 → 29.4 tok/s,
+code 27.6 → 35.4, prefill 798 → 1263 (the non-stream totals of `scripts/bench.sh` agree: 14.52 → 9.58 s,
+9.62 → 6.25 s, 5.90 → 4.01 s). The targets this rig was pointed at are prose 30 / code 45 / prefill 1000:
+**prefill clears it, prose is 2% short, code is 21% short.**
+
 Not verified yet, and worth reporting from a run here:
 
-- **A full load and a decode round on the complete 186 GB checkpoint.** The work to date loaded embed, mixer
-  and layer 0 on real shards, then stopped at layer 1's PLE when that table was the blocker; the table is what
-  this rig is meant to exercise end to end.
-- CUDA-graph capture with the FP4 MoE route: the MoE step walks a host-side item list, so a captured graph
-  encodes one step's list. Try `--parallel` off first, then with graphs enabled.
-- Throughput and memory peak on the Spark, and the effect of `--ple-on-ssd`.
+- The 95.4 GiB of n-gram tables do not fit beside the weights, so every lookup pages from disk; the effect of
+  `--ple-on-ssd` and of a smaller `--context` on throughput is unmeasured here.
 - One of the 128 n-gram shards is proven against real bytes; the other 127 are read by the same code path and
   each shard's header is checked at load time, a mixed layout raising rather than loading wrongly.
 
