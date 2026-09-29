@@ -213,9 +213,12 @@ arithmetic a prompt does, the change moves everything at once, served on the pub
 | 64 pairs (upstream's default) | 32.2 | 63.6 | 1196 |
 | **16 pairs** | **40.0** | **75.8** | **1486** |
 
-Those two rows are the *mounted tree* (`-v .../dev/port/src:/work/src -e PYTHONPATH=/work/src`); the released
-image predates the item and still serves the 64-pair row. `scripts/build.sh` on the branch replaces the image
-and the item becomes the default, no env needed.
+`TF_REF=3ec1227 scripts/build.sh` puts the branch in the image and the image then serves the 16-pair row with
+no mount at all: prose 40.1, code 75.9, prefill 1509 (the two rows above were taken through the mount and agree
+within noise). **Verify the image by what it does, not by the build's exit code.** The first attempt here was a
+silent no-op - `build.sh` sourced `.env` *after* the caller's variables, so `.env`'s pinned ref won and the
+image kept serving 27.2/54.5/1180, byte-identical to the released package. The script now lets the caller win,
+and `direct_url.json` in the image names the commit it was built from.
 
 **The 4-bit checkpoint is the remaining reference, measured here.** Vontra/Qwen3.8-Flash-Next-MLX-4bit-MTP
 (4-bit throughout, 29.8 GiB of n-gram tables), same rig, same client, upstream's defaults (`--no-thinking
