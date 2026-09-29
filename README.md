@@ -175,6 +175,16 @@ Not verified yet, and worth reporting from a run here:
   factor at this window. (`--ple-on-ssd` is refused for an NVFP4 checkpoint - `serve` exits 1 - and a smaller
   the window is not free: the engine bounds the attention launches by it, so the same 2275-token prompt
   measured **1498 tok/s at `--context 8192` and 1088 at 65536**, while decode did not move.)
+- Decode does not feel the context: a 20,020-token prompt measured **16.7 tok/s** against **15.7** for a 37-token
+  one at window 65536, so a long conversation is paid once in prefill - 20,020 tokens in **11.9 s**, about
+  1680 tok/s - and not per token afterwards. The bench's 39.8 and 75.8 are 256-token replies whose drafts the
+  head predicts (about 2.5 accepted a round); on text it predicts less well the same server measures 16 tok/s,
+  which is the range to quote for a conversation rather than a benchmark line.
+- **A repeated conversation is re-prefilled every turn.** Five identical 20k requests all reported `cached=0`,
+  with and without a client `user` field. The prefix cache is a CLI and server feature (`--prompt-cache-gib`,
+  `--checkpoint-slots`, `--spill-gib`) that this CUDA family does not implement: the names appear in `cli.py`,
+  `server/app.py` and the vendored MLX drafter, nowhere under `families/qwen4_exp/`. So at a long context every
+  turn pays the prefill again, and the lever is the length of the conversation, not those flags.
 - One of the 128 n-gram shards is proven against real bytes; the other 127 are read by the same code path and
   each shard's header is checked at load time, a mixed layout raising rather than loading wrongly.
 
