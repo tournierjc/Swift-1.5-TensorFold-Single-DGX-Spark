@@ -174,7 +174,9 @@ Not verified yet, and worth reporting from a run here:
   the served endpoint: decode reads **0.6-0.8 KiB per token from storage**, so the paging is not a throughput
   factor at this window. (`--ple-on-ssd` is refused for an NVFP4 checkpoint - `serve` exits 1 - and a smaller
   the window is not free: the engine bounds the attention launches by it, so the same 2275-token prompt
-  measured **1498 tok/s at `--context 8192` and 1088 at 65536**, while decode did not move.)
+  measured the same 1509-1533 tok/s three times at **`--context 262144`** as at 8192, while decode did not
+  move either. A window is not a rate: the allocator's own default - no `--context` at all - is the affordable
+  native capacity, which on this box admitted the model's full 262144 when asked explicitly.)
 - **Decode does not feel the context.** A 700-token reply measured **39.0 and 41.3 tok/s at 20,035 tokens of
   context**, against **39.6** for the same reply at 36 tokens (window 65536, 1.53 drafts accepted a round). The
   long conversation is paid once in prefill - 20,035 tokens in **11.9 s**, about 1680 tok/s - and not per token

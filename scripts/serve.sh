@@ -21,9 +21,9 @@ PORT="${PORT:-8083}"
 NAME="${NAME:-swift-1.5}"
 # The window is prompt plus reply, and unset is the CUDA's own affordable native capacity - what a server that
 # people talk to wants, since a long conversation needs room and only prefill feels the difference. The benches
-# in the README pin CONTEXT=8192 instead, because those numbers were taken there and a window is not free: the
-# engine bounds the attention launches by it, so a 2275-token prompt measured 1498 tok/s at 8192 and 1088 at
-# 65536 on this rig.
+# in the README pin CONTEXT=8192 to match the numbers they quote, but a window is not a rate: the same
+# 2275-token prompt measures 1509-1533 tok/s at the full native 262144 and at 8192 alike (three runs each), and
+# the full native window costs about 1.2 GiB more than an 8k one. Unset is what a server people talk to wants.
 CONTEXT="${CONTEXT:-}"
 HF_DIR="${HF_DIR:-$HOME/.cache/swift-tensorfold/hf}"
 STATE_DIR="${STATE_DIR:-$HOME/.cache/swift-tensorfold/state}"
