@@ -193,7 +193,27 @@ drafts' head (calibrated to the BF16 body) accepts 48% where it accepted 64% and
 not move. The lm_head's rows never get a copy for the same reason: the drafts' head is a quantized copy of
 those very rows (0 of 63 drafts accepted once they were coarsened, replies garbled).
 
-**45 tok/s on prose is out of reach for this checkpoint on this box.** A round's bytes - 6.9 GiB of dense
+**The targets are reached by the 4-bit checkpoint, measured here.** Vontra/Qwen3.8-Flash-Next-MLX-4bit-MTP
+(4-bit throughout, 29.8 GiB of n-gram tables), same rig, same client, upstream's defaults (`--no-thinking
+--context 8192`, six drafts):
+
+| checkpoint | prose | code | prefill | loaded | start-up |
+| --- | --- | --- | --- | --- | --- |
+| ukisai NVFP4 + `TENSORFOLD_FACES_FP8=1` | 32.2 | 63.6 | 1196 | 97.39 GiB | 548 s |
+| Vontra MLX-4bit | **50.1** | **97.7** | **2024** | 84.26 GiB | 271 s |
+
+Its round is 49.2 ms against 73.6 ms on prose - and it accepts *fewer* drafts (25% against 31%), so the whole
+difference is bytes a round reads, which is the point: the NVFP4 checkpoint's dense linears stay BF16. Prefill
+separates even further (2024 against 1196, +69%): decode reads 0.6-0.8 KiB per token from the tables, but a
+prompt of a few thousand tokens reads them hard enough that the 95.4 GiB of tables paging from disk against
+29.8 GiB resident is what the prompt pays for.
+
+`tensorfold serve Vontra/Qwen3.8-Flash-Next-MLX-4bit-MTP --name swift-1.5 --host 0.0.0.0 --port 8083
+--no-update-check --no-thinking --context 8192` serves it (the container needs the HF cache mounted and
+`HF_HOME` pointing at it). Switch back to the NVFP4 checkpoint when byte-exact agreement with serial decoding
+on that checkpoint's own format is what matters.
+
+**45 tok/s on prose is out of reach for the NVFP4 checkpoint on this box** A round's bytes - 6.9 GiB of dense
 faces plus ~7.3 GB of routed experts - are ~49 ms at the GB10's 273 GB/s and the kernels already run at ~60%
 of peak, while prose accepts 2.19 tokens a round: 45 tok/s would need a 48 ms round at 100% of peak. The 4-bit
 checkpoint of the same model (Vontra's MLX-4bit, 4-bit throughout; upstream's own table has it at 62.7 chat /
