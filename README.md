@@ -165,6 +165,10 @@ first token's decode sits inside TTFT, so it is a slight underestimate), and the
 
 ## Troubleshooting
 
+- **`serve` exits 1 with `--ple-on-ssd reads the MLX checkpoint's n-gram shards from disk; an NVFP4 checkpoint's
+  tables stay memory-mapped, so drop --ple-on-ssd`** — 0.3.6.3 refuses the flag for this checkpoint and exits
+  before the weights load, so a profile tuned before that (this rig's `EXTRA_ARGS` carried it) will not start
+  at all. Drop it: the tables are memory-mapped either way here.
 - **`KeyError: ...ngram_embedding.shard_0.weight`** — the checkpoint is incomplete. A repacked copy (48 layer
   files, no `embedding-*` files ~79 GB, as some local copies are) has no n-gram table: download the published
   revision with `scripts/pull.sh` and serve that.
@@ -174,7 +178,8 @@ first token's decode sits inside TTFT, so it is a slight underestimate), and the
   continues without the pin. `scripts/serve.sh` already raises the limit and adds `IPC_LOCK`.
 - **Slow first token after a rebuild** — the kernels are JIT-compiled on first use; keep `STATE_DIR` across
   rebuilds.
-- **Out of memory at load** — add `--ple-on-ssd`, then `--ssd-experts`, then lower `--context`.
+- **Out of memory at load** — add `--ssd-experts`, then lower `--context` (`--ple-on-ssd` is refused for this
+  checkpoint on 0.3.6.3; see above).
 
 ## Layout
 
