@@ -213,12 +213,12 @@ prompt of a few thousand tokens reads them hard enough that the 95.4 GiB of tabl
 `HF_HOME` pointing at it). Switch back to the NVFP4 checkpoint when byte-exact agreement with serial decoding
 on that checkpoint's own format is what matters.
 
-**45 tok/s on prose is out of reach for the NVFP4 checkpoint on this box** A round's bytes - 6.9 GiB of dense
-faces plus ~7.3 GB of routed experts - are ~49 ms at the GB10's 273 GB/s and the kernels already run at ~60%
-of peak, while prose accepts 2.19 tokens a round: 45 tok/s would need a 48 ms round at 100% of peak. The 4-bit
-checkpoint of the same model (Vontra's MLX-4bit, 4-bit throughout; upstream's own table has it at 62.7 chat /
-76.5 code on one Spark) is where that rate comes from, so the remaining gap to 60 is the checkpoint's layout,
-not the engine.
+**45 tok/s on prose is out of reach for the NVFP4 checkpoint on this box.** Its round carries ~7.3 GB of
+routed experts plus the dense faces it re-reads (6.9 GiB of stored BF16, 2.76 GB with the 8-bit copies above),
+and those bytes at the GB10's 273 GB/s are already ~49 ms once the kernels run at their measured ~60% of peak,
+while prose accepts 2.19 tokens a round: 45 tok/s would need a 48 ms round at 100% of peak on every byte. The
+same model converted 4-bit throughout does it (table above) - the gap is the checkpoint's layout, not the
+engine, and the engine work here is what closes as much of it as load-time requantization can.
 
 ## Measuring speed
 
