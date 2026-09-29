@@ -29,7 +29,7 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # assert naming the kernel and line; PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True helps fragmentation.
 # CUDA_LAUNCH_BLOCKING=1 serialises launches, so keep it off while graphs are captured.
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM; do
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 
