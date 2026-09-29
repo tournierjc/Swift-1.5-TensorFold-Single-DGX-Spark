@@ -15,13 +15,15 @@ checkpoint's vision tower is not read.
 | | |
 | --- | --- |
 | Model | `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`, revision `3ff05202` — 186.4 GB over 296,474 tensors |
-| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `e65a10d` (override with `TF_REF`) |
+| Engine | `tournierjc/TensorFold@nvfp4-flash-next`, pinned to `36a5bc46bf77f8d34984fd59d979a7d1391567d5` (override with `TF_REF`) |
 | Upstream PR | [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) (draft) |
 | Base image | `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the extension compiler |
 | Endpoint | OpenAI-compatible on `:8083` (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
 | Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate for prose, code and a long prefill |
 
-Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `e65a10d93d84ce5e51de3e71cba3595b9db55eb9`.
+Pinned commit (in the `Dockerfile` as `ARG TF_REF`): `36a5bc46bf77f8d34984fd59d979a7d1391567d5`.
+
+**Quality (tip `36a5bc4`):** ModelOpt NVFP4 dequant is `W = E2M1 * fp32(e4m3) * weight_scale_2` (no extra `2**-7`). Chat on `:8083` with `--no-thinking` returns real `content` (Paris / 42). Prior empty/`im_end` loops were from the erroneous `2**-7` scale.
 
 The checkpoint's own `ple_embedding.ngram_embedding.shard_N.weight` tensors are BF16 `[2500012, 160]` rows with
 no per-shard scales — 128 shards, 320,001,536 rows, 29.8 GiB, memory-mapped and gathered a lookup at a time.
@@ -66,7 +68,7 @@ Then the levers, in `.env` as `EXTRA_ARGS`:
 - `--ple-on-ssd` — the n-gram tables stay in the checkpoint on disk instead of the host page cache: about
   40 GiB less at peak for a few percent of decode speed. This is the first thing to try if the load is tight.
 - `--ssd-experts 90` — stream routed experts into a 90 GiB GPU pool for models past the memory budget.
-- `--mtp-drafts 10 --mtp-confidence 0.20` — Spark bench defaults that clear prose≥30 / code≥45 with graphs; `0` disables drafting.
+- `--mtp-drafts 10 --mtp-confidence 0.20 --no-thinking --context 8192` — Spark defaults: MTP for decode, answers in chat `content`, and an 8k window so unified memory has headroom for hermes-agent beside the weights; drafts `0` disables drafting.
 - `--parallel 2` — two requests decoded together, windows sharing each round's forward (Flash Next, one rank).
 - `--context N` — prompt plus reply window; the CUDA default is the affordable native capacity.
 - `--no-drafts` — the serial reference: same output, slower.
