@@ -196,9 +196,23 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
 ## Checkpoint and engine detail (moved out of the README)
 
 - Engine pinned by the `Dockerfile` as `ARG TF_REF`:
-  `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3; the rig ran the 0.3.6.2
-  `nvfp4-flash-next` branch before it). Upstream PR
-  [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) merged as 0.3.6.3.
+  `230c69c010ad7d103a80bb6ff7f0afe29fa1e549`, `tournierjc/TensorFold@integration/0.6.0` — upstream
+  `ashhart/TensorFold@c464617` (0.6.0) plus the rig's own changes, one commit each: the 8-bit projection
+  copies, the `qwen4_exp` vision port, the 80,014-id draft vocabulary, the PLE row prefetch and the 12-bit
+  decode faces. The README's "Engine revision and the branches" lists every branch and its head.
+  History: the rig served `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3,
+  upstream PR [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) merged as 0.3.6.3) and
+  before that the 0.3.6.2 `nvfp4-flash-next` branch, then 0.5.0 with three PRs on top — the tables below were
+  taken there, not on 0.6.0.
+- **The 0.6.0 rebase.** Two of those three PRs are upstream now, with the same patch, so the rig no longer
+  carries them: the multi-row item-16 pair path (#102, upstream as `9933492`) and the fp32 reduce / `_fp4mm`
+  block change (#105, upstream as `443ad4a`). The third, the 8-bit projection copies (#104), upstream declined
+  (*no precision traded for speed*) and it stays, gated by `TENSORFOLD_FACES_FP8`. The draft vocabulary is no
+  longer overlaid from this repository: it is a commit on the pinned branch, byte-identical
+  (`8facf56e11ad522ca8ba1d396755b6ce7cc98f2bf226498780fcc7806231c192`), and the build asserts the installed
+  package's own file instead of copying one in. Another branch, `pr/host-table-rows-by-file` (#103, closed
+  unmerged), keeps the round's n-gram rows read by file over the pool; it is **not** in the pinned branch, so
+  it is not in the served image.
 - Base image `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the
   extension compiler.
 - Revision `3ff05202` of the checkpoint: 186.4 GB over 296,474 tensors.

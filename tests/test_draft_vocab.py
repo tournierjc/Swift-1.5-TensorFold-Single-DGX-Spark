@@ -7,16 +7,19 @@ MiaAI Lab, https://x.com/MiaAI_lab): `files/build_draft_vocab.py` and `files/bui
 
 Two things are checked here. First the builder's three rules, as pure functions -- a base list is a floor,
 the byte-fallback range is pinned whatever its frequency, and only real text adds ids. Then the artifact the
-image installs, `patch/draft_vocab.txt`: that it is a legal draft vocabulary for this checkpoint (one id per
-line, sorted, unique, inside the vocabulary), that it still pins the byte-fallback range, and that it never
-drops an id the engine's own shipped list carries -- the property that makes this port a monotone extension
-rather than a bet. Both would fail on a tree without the port: there would be no builder to import and no
-`patch/draft_vocab.txt` to read.
+image installs: `families/qwen4_exp/cuda/draft_vocab.txt` of the pinned engine revision, which travels with
+`TF_REF` (this repository overlays nothing any more), read from the engine checkouts this host keeps under
+`dev/`. That it is a legal draft vocabulary for this checkpoint (one id per line, sorted, unique, inside the
+vocabulary), that it is the 80,014-id port at the digest this rig measured, that it still pins the
+byte-fallback range, and that it never drops an id another checkout's shipped list carries -- the property
+that makes this port a monotone extension rather than a bet. Both would fail on a tree without the port:
+there would be no builder to import and no ported list to read.
 """
 
 from __future__ import annotations
 
 import collections
+import hashlib
 import sys
 from pathlib import Path
 
@@ -31,11 +34,12 @@ build_draft_vocab = pytest.importorskip("build_draft_vocab", reason="scripts/bui
 # revision 3ff05202; its config.json text_config.vocab_size is the padded 248,320, which is not what the
 # tokenizer can produce). The engine's own list stops at 248,076, one below this.
 VOCAB_SIZE = 248_077
-SHIPPED = ROOT / "patch" / "draft_vocab.txt"
-ENGINE_BASELINE = [
-    ROOT / "dev" / "repo" / "src" / "tensorfold" / "families" / "qwen4_exp" / "cuda" / "draft_vocab.txt",
-    ROOT / "dev" / "port" / "src" / "tensorfold" / "families" / "qwen4_exp" / "cuda" / "draft_vocab.txt",
-]
+PORTED_IDS = 80_014                                             # the port's size, asserted by the Dockerfile too
+PORTED_SHA256 = "8facf56e11ad522ca8ba1d396755b6ce7cc98f2bf226498780fcc7806231c192"     # and its measured digest
+VOCAB = "src/tensorfold/families/qwen4_exp/cuda/draft_vocab.txt"
+# The engine checkouts this rig keeps under dev/ (untracked): the fork branch the Dockerfile pins, and the
+# upstream revisions it was rebased from. Each one ships its own draft_vocab.txt.
+ENGINE_CHECKOUTS = [ROOT / "dev" / name / VOCAB for name in ("repo", "port", "pinned")]
 
 
 class FakeTokenizer:
@@ -152,42 +156,67 @@ def test_write_ids_is_the_format_the_engine_reads(tmp_path):
 
 # -- the artifact the image installs ------------------------------------------------------------------------
 
-def test_the_shipped_file_is_a_legal_draft_vocabulary():
-    ids = read_ids(SHIPPED)
-    assert ids, f"{SHIPPED} is empty or missing: the port is not installed"
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def ported() -> Path:
+    """The ported list: the `dev/` checkout whose file is the digest this rig measured.
+
+    The pin carries it (`TF_REF`); this repository no longer overlays it, so the artifact is read where the
+    engine keeps it. Skips where no engine checkout is on this host (the rig ships them under `dev/`, untracked).
+    """
+
+    for path in (p for p in ENGINE_CHECKOUTS if p.exists()):
+        if sha256(path) == PORTED_SHA256:
+            return path
+    pytest.skip(f"no engine checkout under dev/ carries the ported list ({PORTED_SHA256[:12]})")
+
+
+def test_the_ported_file_is_a_legal_draft_vocabulary():
+    ids = read_ids(ported())
     assert ids == sorted(ids), "the engine reads these in file order as draft-head row order"
-    assert len(ids) == len(set(ids))
-    assert 0 < len(ids) < VOCAB_SIZE
+    assert len(ids) == len(set(ids)) == PORTED_IDS
     assert max(ids) < VOCAB_SIZE and min(ids) >= 0
 
 
-def test_the_shipped_file_pins_the_byte_fallback_range():
+def test_the_ported_file_is_the_list_this_rig_measured():
+    """The digest the numbers above were taken with, so a re-ranker's new list cannot pass as this one."""
+
+    assert sha256(ported()) == PORTED_SHA256
+
+
+def test_the_ported_file_pins_the_byte_fallback_range():
     """Rule 2 at the artifact level: a corpus ranking must not be allowed to drop the byte pieces."""
 
-    ids = set(read_ids(SHIPPED))
-    assert len(ids & set(range(256))) == 256, "the byte-fallback ids are missing from the shipped list"
+    ids = set(read_ids(ported()))
+    assert len(ids & set(range(256))) == 256, "the byte-fallback ids are missing from the ported list"
 
 
-def test_the_shipped_file_never_drops_the_engines_shipped_list():
+def test_the_ported_file_never_drops_another_checkouts_shipped_list():
     """Rule 1 at the artifact level, and the reason this port is safe: a superset can only add coverage.
 
-    Skipped where the engine checkout is not on this host (the rig ships it under `dev/`, untracked).
+    Every other checkout's list is a floor -- upstream's own 79,591-id list above all. Skipped where only the
+    ported checkout is on this host, which is the case that would make the comparison vacuous.
     """
 
-    baseline = next((p for p in ENGINE_BASELINE if p.exists()), None)
-    if baseline is None:
-        pytest.skip("no engine source checkout under dev/: cannot compare against the shipped list")
-    missing = set(read_ids(baseline)) - set(read_ids(SHIPPED))
-    assert not missing, f"{len(missing)} ids the engine ships are missing, e.g. {sorted(missing)[:8]}"
+    floors = [p for p in ENGINE_CHECKOUTS if p.exists() and sha256(p) != PORTED_SHA256]
+    if not floors:
+        pytest.skip("only the ported checkout is present under dev/: nothing to compare against")
+    for floor in floors:
+        missing = set(read_ids(floor)) - set(read_ids(ported()))
+        assert not missing, f"{len(missing)} ids of {floor} are missing, e.g. {sorted(missing)[:8]}"
 
 
-def test_the_image_overlays_the_file_where_the_engine_reads_it():
-    """The wiring: `patch/` is copied over .../families/qwen4_exp/cuda/, beside weights.py, where
-    `draft_token_ids("default")` looks for draft_vocab.txt. A file in the wrong place is a silent no-op."""
+def test_the_build_asserts_the_vocabulary_it_installs():
+    """The wiring, now that the revision carries the file rather than an overlay: the Dockerfile reads the
+    installed package's own `families/qwen4_exp/cuda/draft_vocab.txt` -- beside weights.py, where
+    `draft_token_ids("default")` looks -- and fails the build unless it is the 80,014-id port."""
 
     dockerfile = (ROOT / "Dockerfile").read_text()
-    assert "localpatch" in dockerfile and "families/qwen4_exp/cuda/" in dockerfile
-    assert SHIPPED.name == "draft_vocab.txt"
+    assert "tensorfold.__file__" in dockerfile and "families/qwen4_exp/cuda/draft_vocab.txt" in dockerfile
+    assert f"len(ids) == {PORTED_IDS}" in dockerfile, "the build must assert the port's size, not just legality"
+    assert "localpatch" not in dockerfile, "the overlay is gone: the vocabulary travels with TF_REF now"
 
 
 def test_the_engine_reads_the_file_into_exactly_these_rows():
@@ -202,6 +231,7 @@ def test_the_engine_reads_the_file_into_exactly_these_rows():
 
     import numpy as np
 
-    got = weights.draft_token_ids(str(SHIPPED))
+    path = ported()
+    got = weights.draft_token_ids(str(path))
     assert got is not None
-    assert got.tolist() == np.unique(np.asarray(read_ids(SHIPPED))).tolist()
+    assert got.tolist() == np.unique(np.asarray(read_ids(path))).tolist()

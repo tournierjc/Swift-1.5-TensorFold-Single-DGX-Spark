@@ -1,7 +1,7 @@
 # Swift 1.5 on TensorFold — one DGX Spark
 
 A test rig that serves the Swift 1.5 NVFP4 checkpoint on a single DGX Spark (GB10, 128 GB unified memory)
-with [TensorFold](https://github.com/ashhart/TensorFold) 0.5.0: FP4 routed experts, BF16 everywhere else, and
+with [TensorFold](https://github.com/ashhart/TensorFold) 0.6.0: FP4 routed experts, BF16 everywhere else, and
 the PLE layer's n-gram table in the BF16 layout this revision publishes.
 
 The sibling rig [`Qwen3.8-Flash-Next-Single-DGX-Spark`](https://github.com/tournierjc/Qwen3.8-Flash-Next-Single-DGX-Spark)
@@ -16,7 +16,7 @@ square answered "Rouge" (2.7 s) and "Bleu" (2.9 s).
 | | |
 | --- | --- |
 | Model | `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`, revision `3ff05202` — 186.4 GB over 296,474 tensors |
-| Engine | TensorFold **0.5.0** (`ashhart/TensorFold`; the `Dockerfile` pins a ref, override with `TF_REF`), with three local changes carried on top: the multi-row item-16 pair path, the 8-bit projection copies gated by `TENSORFOLD_FACES_FP8`, and an fp32 reduce / `_fp4mm` block change. A local port of the `qwen4_exp` vision patch rides with them |
+| Engine | TensorFold **0.6.0** (`ashhart/TensorFold@c464617`), served from the fork branch `integration/0.6.0` — the `Dockerfile` pins that branch's commit, override with `TF_REF`. On top of 0.6.0 it carries: the 8-bit projection copies gated by `TENSORFOLD_FACES_FP8`, the `qwen4_exp` vision port (a port rather than a flag: upstream accepts only `qwen3_5` there), the 80,014-id MTP draft vocabulary, and the PLE row prefetch. Two changes this rig used to carry — the multi-row item-16 pair path and the fp32 reduce / `_fp4mm` block — are upstream in 0.6.0 and are gone from the branch. A 12-bit decode-face prototype rides along, dormant unless `TENSORFOLD_FACES_12BIT` is set |
 | Served as | `qwen3.8-flash-next` on `:8083` |
 | Endpoint | OpenAI-compatible (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
 | Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate |
@@ -48,12 +48,15 @@ scripts/smoke.sh                     # in another shell: health, /v1/models, one
 scripts/bench.sh                     # in another shell: prose, code and prefill speed
 ```
 
-The running image is **not** the `Dockerfile`'s default ref, which pins the upstream. Build the branch it
-came from, and pass `TF_REPO` as well — without it the build resolves the upstream and a fork branch is
-simply not there (`pathspec ... did not match any file(s) known to git`):
+The engine the image serves is the fork's `integration/0.6.0` branch, and that is now the `Dockerfile`'s own
+default (`TF_REPO`) — upstream 0.6.0 plus the rig's changes, none of which upstream carries. Build it with no
+arguments. To test another revision, pass both: `TF_REPO` alone is not enough, since without `TF_REF` the build
+resolves the fork's `main` (upstream 0.6.0, no port, no vision) and fails its own draft-vocabulary check.
 
 ```bash
-TF_REPO=https://github.com/tournierjc/TensorFold.git TF_REF=feat/vision-qwen4-exp scripts/build.sh
+scripts/build.sh                                                        # the pinned integration branch
+TF_REF=<sha|branch> scripts/build.sh                                    # another commit of the same fork
+TF_REPO=https://github.com/ashhart/TensorFold.git TF_REF=v0.6.0 scripts/build.sh   # upstream, for a baseline
 ```
 
 Logs go to the terminal that runs `scripts/serve.sh`; `scripts/stop.sh` stops a detached run and an
@@ -134,8 +137,11 @@ curl -fsS http://127.0.0.1:8083/v1/chat/completions \
 
 ## Status of the engine under test
 
-What the rig measures today — TensorFold 0.5.0 with the three local changes, `--thinking`, three lanes at the
-full 262144 window, int8 KV, `--mtp-confidence 0.60`, 8-bit faces on every layer:
+What the rig last measured — TensorFold **0.5.0** with the three changes that are now the pinned branch's own
+first commits, `--thinking`, three lanes at the full 262144 window, int8 KV, `--mtp-confidence 0.60`, 8-bit
+faces on every layer. These figures have **not** been re-taken on 0.6.0: the rebase replays these paths
+unchanged, but 0.6.0 brings 43 upstream commits of its own, so treat the numbers below as the last reading
+rather than as the current revision's.
 
 - **Long-prompt context (15,460 prompt tokens):** TTFT **9.28 s**, prefill **1666 tok/s**, decode **51.5 tok/s**
 on a short reply.
@@ -213,14 +219,17 @@ list in its `docs/recipes/qwen3.8-flash-next.md`). A token outside the list can 
 draft is verified against the model's own samples, so a missing token costs acceptance and never
 correctness -- which makes the list a pure speed decision, and worth choosing deliberately.
 
-`patch/draft_vocab.txt` is the list this rig installs **by default** (every build copies `patch/` over the installed engine, so `scripts/build.sh` with no arguments produces it -- there is no opt-in flag to leave unset, the failure mode that cost the sibling recipe ~17%): **80,014 ids** -- the engine's shipped 79,591-id list
-whole, plus **423** ids ranked by frequency over the engine's source, its tests and the CPython stdlib beside
-it, with the byte-fallback range pinned (ids 0-255, what BPE falls back to for accents, CJK and emoji).
-Being a strict superset of the engine's list, it cannot lower coverage on any text: 0 of the engine's ids
+The 80,014-id list this rig serves is **part of the pinned revision** — `integration/0.6.0` carries it as
+`families/qwen4_exp/cuda/draft_vocab.txt`, and the Dockerfile fails the build unless the installed package has
+it with that count (a build against upstream or an older tag stops there in seconds instead of scoring 79,591
+ids at run time, the failure mode that cost the sibling recipe ~17%). **80,014 ids** — the engine's shipped
+79,591-id list whole, plus **423** ids ranked by frequency over the engine's source, its tests and the CPython
+stdlib beside it, with the byte-fallback range pinned (ids 0-255, what BPE falls back to for accents, CJK and
+emoji). Being a strict superset of the engine's list, it cannot lower coverage on any text: 0 of the 79,591 ids
 are missing, checked against the list the built image installs
 (`88d5b483a849ae9245b78b69f41f11cdfc8b5c024f0786c1c8196263857cc93e`, the digest the engine's own
 `docs/recipes/qwen3.8-flash-next.md` publishes). This file's own digest is
-`8facf56e11ad522ca8ba1d396755b6ce7cc98f2bf226498780fcc7806231c192`.
+`8facf56e11ad522ca8ba1d396755b6ce7cc98f2bf226498780fcc7806231c192`, asserted by `tests/test_draft_vocab.py`.
 
 **Credit.** The construction is ported from MIA AI Lab's reduced-vocabulary MTP drafting,
 ["mia's recipe"](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark) --
@@ -252,20 +261,25 @@ Decode rate was measured too, with the full 186 GB checkpoint loaded, one list a
 reduced list is worth was already banked in the engine's own 79,591 ids; the 423 this rig adds are kept for the
 coverage that list leaves on the table, not for a rate, and they cost none.
 
-To rebuild it, from the repository root (the image carries `tokenizers`; `HF_DIR` comes from `.env`):
+To rebuild it, from the repository root (the image carries `tokenizers`; `HF_DIR` comes from `.env`). `--base`
+is the list to extend: the engine's own shipped 79,591 ids, read from a checkout of the upstream revision under
+`dev/` (the example spells it `dev/port`, beside the fork's `dev/repo`; this rig's own tests look for either
+name, plus `dev/pinned`). The output goes to a scratch path, not into this repository — the list is a commit on
+the engine branch now, so compare it (`sha256sum`; the rig's is `8facf56e…`) and commit it there:
 
 ```bash
 TOK=$(echo /hf/hub/models--ukisai--Swift-1.5-Qwen3.8-Flash-Next-NVFP4/snapshots/*/tokenizer.json)
 docker run --rm --user "$(id -u):$(id -g)" --entrypoint python3 \
   -v "$PWD":/rig -v "$HF_DIR":/hf:ro -v /usr/lib/python3.12:/stdlib:ro swift-tensorfold:local -B \
-  /rig/scripts/build_draft_vocab.py "$TOK" /rig/patch/draft_vocab.txt \
-  --base /rig/dev/repo/src/tensorfold/families/qwen4_exp/cuda/draft_vocab.txt --size 98304 \
+  /rig/scripts/build_draft_vocab.py "$TOK" /tmp/draft_vocab.txt \
+  --base /rig/dev/port/src/tensorfold/families/qwen4_exp/cuda/draft_vocab.txt --size 98304 \
   '/rig/dev/repo/src/**/*.py' '/rig/dev/repo/tests/**/*.py' '/stdlib/**/*.py'
 ```
 
 Add the model's own output as `.jsonl` (a `text` field per line, `:N` to repeat it) to weight it against the
 generic corpus; `--help` documents `--base`, `--byte-fallback-max`, `--keep-below`, `--min-count`,
-`--holdout` and `--sweep`. `tests/test_draft_vocab.py` checks the builder's rules and the installed file; `pytest.ini` keeps the engine checkouts under `dev/` out of that run.
+`--holdout` and `--sweep`. `tests/test_draft_vocab.py` checks the builder's rules and the list the pinned
+engine ships; `pytest.ini` keeps the engine checkouts under `dev/` out of that run.
 
 ## Troubleshooting
 
@@ -290,7 +304,7 @@ generic corpus; `--help` documents `--base`, `--byte-fallback-max`, `--keep-belo
 ## Layout
 
 ```
-Dockerfile              image: NVIDIA PyTorch + TensorFold (pinned ref), weights never baked in
+Dockerfile              image: NVIDIA PyTorch + TensorFold (the fork's pinned integration commit)
 scripts/build.sh        docker build, then `tensorfold --version` and a branch-only import check
 scripts/preflight.py    header-only startup estimate: sizes the checkpoint without loading it, prints the plan
 scripts/pull.sh         resumable download into HF_DIR
@@ -301,9 +315,7 @@ bench/speed.py          what bench.sh runs: streaming TTFT + the server's usage,
 scripts/stop.sh         stop this rig's containers
 docs/engine-status.md   engine versions, the change history, and every benchmark table
 scripts/build_draft_vocab.py  builds the MTP draft head's reduced vocabulary (ported from mia's recipe)
-tests/test_draft_vocab.py     the builder's rules and the vocabulary the image installs
-patch/README.md         what this rig changes in the engine: the overlaid files and their source branches
-patch/draft_vocab.txt   that overlay's MTP draft vocabulary (80,014 ids)
+tests/test_draft_vocab.py     the builder's rules and the vocabulary the pinned engine ships
 pytest.ini              default test collection: this rig's tests/, not the engine checkouts under dev/
 .env.sample             copy to .env: paths, port, HF token, EXTRA_ARGS
 ```
@@ -312,31 +324,47 @@ Weights, caches and logs stay on the host; the image holds the engine only. `scr
 installed `tensorfold --version` and imports `tensorfold.families.qwen4_exp.cuda.nvfp4`, a module that exists
 only on this branch, so a silently wrong build fails at build time.
 
-## Patch sources
+## Engine revision and the branches
 
-`patch/` is the whole of what this rig changes in the engine it serves: files copied over the installed
-`tensorfold` package at build time. Each one is sourced from a branch of
-[`tournierjc/TensorFold`](https://github.com/tournierjc/TensorFold), the fork this rig's engine changes are
-developed on -- a change lives on its branch there, not in this repository. The image installs the revision the
-Dockerfile pins (`TF_REPO`/`TF_REF`); `patch/` is what goes on top of it.
+Every engine change this rig serves lives on a branch of
+[`tournierjc/TensorFold`](https://github.com/tournierjc/TensorFold) — a change lives on its branch there, never
+as a file copied into this repository. The image installs the revision the Dockerfile pins
+(`TF_REPO`/`TF_REF`) and overlays **nothing**: the revision carries the whole rig.
 
-| File this rig overlays | Lands at, inside the installed package | Source branch in `tournierjc/TensorFold` | Branch head |
-| --- | --- | --- | --- |
-| `patch/draft_vocab.txt` | `tensorfold/families/qwen4_exp/cuda/draft_vocab.txt` | `feat/mtp-draft-vocab` | `c37e77a32096bd2327695ee400034bfd71dcb248` |
+The rebase onto upstream 0.6.0 (`c464617`) replayed every branch and dropped what upstream had already merged.
+Two PRs are upstream now, so their branches are gone — the multi-row item-16 pair path
+([#102](https://github.com/ashhart/TensorFold/pull/102)) and the fp32 reduce / `_fp4mm` block change
+([#105](https://github.com/ashhart/TensorFold/pull/105)), both merged in 0.6.0 with the same patch. A third,
+the 8-bit projection copies ([#104](https://github.com/ashhart/TensorFold/pull/104)), upstream declined (*no
+precision traded for speed*) and this rig keeps it: `TENSORFOLD_FACES_FP8=all` carries the rig's reference
+numbers.
 
-One file, one branch, today. What belongs to this rig rather than to the engine stays here: the builder that
-produced the file (`scripts/build_draft_vocab.py`), the checks that hold it to its invariants
-(`tests/test_draft_vocab.py`, `pytest.ini`), and the "MTP draft vocabulary" section above.
+| Branch in `tournierjc/TensorFold` | Head | What it carries |
+| --- | --- | --- |
+| **`integration/0.6.0`** | `230c69c010ad7d103a80bb6ff7f0afe29fa1e549` | **the pinned revision**: 0.6.0 + the 8-bit copies + the vision port + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
+| `feat/vision-qwen4-exp` | `addccb5d9a253935ca0f78f46fb931f45d7b909f` | 0.6.0 + the 8-bit copies + the vision port (images and video, `--vision`, two lanes) |
+| `feat/mtp-draft-vocab` | `153bf32ae56c8017acaf75f9fff3a801e8e6f002` | the 80,014-id MTP draft vocabulary |
+| `cursor/ple-row-prefetch-0ff8` | `4aff67d6b1b586197b72a7cc2226014096a5cccc` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts |
+| `cursor/lossless-12bit-faces-0ff8` | `40ebb25e376e06c9f09558dadf143e818dfb1dcb` | the 12-bit shared-exponent decode faces — lossless, `TENSORFOLD_FACES_12BIT`, dormant unless set |
+| `pr/host-table-rows-by-file` | `79aa2a06c7ca52ade88a479f33149fcda55906ae` | a round's few n-gram rows read by file over the pool, not one after another (#103, closed unmerged) |
+| `main` | `c4646171139ee8a3c38103eaa1699dad226ec12b` | upstream 0.6.0, realigned |
+| `cursor/lossless-12bit-faces-1ba6` | `410d2ffad389f5248cb5ac652714eb749823fc7a` | the same 12-bit prototype under an older spelling (`kind=` where `-0ff8` uses `face=`), still on the pre-rebase base: kept for the record, superseded |
 
-### The overlay itself
+`integration/0.6.0` is what the rig measured with, one commit per change on top of 0.6.0; the branches above
+are the same changes in reviewable units. What belongs to this rig rather than to the engine stays here: the
+builder that produced the vocabulary (`scripts/build_draft_vocab.py`), the checks that hold it to its
+invariants (`tests/test_draft_vocab.py`, `pytest.ini`), and the sections above.
 
-`patch/` is a **list of files**, never a whole working tree. The Dockerfile copies it over the installed
-package on **every** build -- `COPY patch /tmp/localpatch`, then `cp -a` into `families/qwen4_exp/cuda/`, then an
-assertion that the vocabulary it landed is present, non-empty and sorted -- so `scripts/build.sh` with no
-arguments produces the patched engine, and there is no opt-in flag to leave unset. Overlaying a whole working
-tree instead replaces every file that tree lacks at whatever revision it happens to carry, which is how this
-image once shipped an older `vision/config.py` and refused the checkpoint at launch. Keep it to files that
-differ, each derived from the revision `TF_REF` installs, and check the image still starts before keeping it.
+### Why nothing is overlaid any more
+
+The Dockerfile used to copy `patch/draft_vocab.txt` over the installed package on every build, because the
+vocabulary existed only as a file in this repository. It is a commit on the pinned revision now, byte for byte
+the same file (`8facf56e…`), so the overlay carried no delta and is gone. What replaces it is an assertion in
+the build: the installed package's own `families/qwen4_exp/cuda/draft_vocab.txt` must hold 80,014 sorted ids,
+so pinning a revision without the port fails in seconds instead of scoring 79,591 ids at run time. The rule the
+overlay taught still holds for any future delta: never overlay a whole working tree — that replaces every file
+the tree lacks with the revision it happens to carry, which is how this image once shipped an older
+`vision/config.py` and refused the checkpoint at launch.
 
 The numbers each change is kept for are in the sections above; `docs/engine-status.md` holds the change
 history.
@@ -354,7 +382,8 @@ MIT (this repository). TensorFold is MIT; the model weights keep their own licen
   (AGPL-3.0-or-later, Copyright (C) 2026 [MiaAI Lab](https://x.com/MiaAI_lab)):
   `files/build_draft_vocab.py`, `files/build_draft_vocab_extend.py` and its vLLM wiring
   `files/patch_mtp_draft_vocab.py`. What is taken is the technique -- the corpus doctrine and its three rules
-  -- re-expressed for this engine in `scripts/build_draft_vocab.py` and `patch/draft_vocab.txt`; no file from
+  -- re-expressed for this engine in `scripts/build_draft_vocab.py` and the pinned branch's
+  `families/qwen4_exp/cuda/draft_vocab.txt`; no file from
   that repository is copied, and this repository stays MIT.
 - The checkpoint is
   [`ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`](https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4);

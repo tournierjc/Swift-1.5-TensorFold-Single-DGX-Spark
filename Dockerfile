@@ -9,10 +9,12 @@
 
 FROM nvcr.io/nvidia/pytorch:26.07-py3
 
-# The revision under test. Pinned to the commit this repository was prepared against; override to test
-# another one:  TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
-ARG TF_REPO=https://github.com/ashhart/TensorFold.git
-ARG TF_REF=191188075bca56a7c71074a79375eb4c1cb22e1c
+# The revision under test. Pinned to the commit this repository was prepared against -- upstream 0.6.0 plus the
+# rig's own changes, which live in `integration/0.6.0` of the fork `tournierjc/TensorFold` (the "Engine revision
+# and the branches" section of the README lists what each one carries). Override to test another one:
+#   TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
+ARG TF_REPO=https://github.com/tournierjc/TensorFold.git
+ARG TF_REF=230c69c010ad7d103a80bb6ff7f0afe29fa1e549
 
 LABEL org.opencontainers.image.title="Swift 1.5 on TensorFold (single DGX Spark)" \
       org.opencontainers.image.source="https://github.com/tournierjc/Swift-1.5-TensorFold-Single-DGX-Spark" \
@@ -41,16 +43,14 @@ RUN python3 -m pip install --no-cache-dir "tensorfold @ git+${TF_REPO}@${TF_REF}
     && python3 -c "from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5VisionModel; print('vision tower modules present')" \
     && mkdir -p /hf /state /models
 
-# patch/ is part of the recipe: EVERY build copies it over the installed engine, so the vocabulary below is
-# what `scripts/build.sh` produces with no arguments and no opt-in flag to leave unset -- the sibling recipe
-# lost ~17% to exactly that. It holds ONLY the files that differ, each derived from the revision TF_REF
-# installs. Overlaying a whole working tree instead replaces every file that tree lacks at the version it
-# happens to carry, which is how this image once shipped an older vision gate that refused the checkpoint
-# at launch: keep the patch a list of files, and check it still starts before keeping it.
-COPY patch /tmp/localpatch
+# The engine revision carries every change this rig serves (the README's "Engine revision and the branches"
+# section names them). The build asserts the one that is silent when missing: the MTP draft head's reduced
+# vocabulary, `families/qwen4_exp/cuda/draft_vocab.txt`, 80,014 ids -- the pinned revision's own list, which is
+# what `scripts/build_draft_vocab.py` produced. A build against a ref that does not carry the port (upstream, or
+# an older tag) fails here in seconds instead of scoring 79,591 ids at run time -- the failure mode that cost the
+# sibling recipe ~17%, and the reason this check is a build step and not a flag.
 RUN pkg="$(python3 -c 'import tensorfold, os; print(os.path.dirname(tensorfold.__file__))')" \
-    && cp -a /tmp/localpatch/. "${pkg}/families/qwen4_exp/cuda/" \
-    && PKG="${pkg}" python3 -c "import os, pathlib; p = pathlib.Path(os.environ['PKG'], 'families/qwen4_exp/cuda/draft_vocab.txt'); ids = [int(x) for x in p.read_text().split()]; assert ids and ids == sorted(set(ids)), p; print('[build] draft vocabulary:', len(ids), 'ids overlaid')"
+    && PKG="${pkg}" python3 -c "import os, pathlib; p = pathlib.Path(os.environ['PKG'], 'families/qwen4_exp/cuda/draft_vocab.txt'); ids = [int(x) for x in p.read_text().split()]; assert ids and ids == sorted(set(ids)), p; assert len(ids) == 80014, f'{p}: {len(ids)} ids, the port carries 80014'; print('[build] draft vocabulary:', len(ids), 'ids')"
 
 # /hf    Hugging Face cache (186 GB for this checkpoint)      -> host bind
 # /state kernel caches: triton, torch extensions, inductor    -> host bind
