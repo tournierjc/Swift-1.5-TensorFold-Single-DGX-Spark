@@ -29,10 +29,16 @@ ENV PYTHONUNBUFFERED=1 \
 
 # NVIDIA's container supplies CUDA, torch, triton and the extension compiler; the package has no `cuda`
 # extra, and installing it here must not replace that toolchain.
+# --vision needs two more: the tower's modules live in transformers (the same tower the dense
+# Qwen3.5/3.8 checkpoints use), and PyAV decodes video. transformers is pinned to the version the
+# patch was written against, and the import is the check - a missing transformers only shows up when
+# the first image arrives, nine minutes into a load.
 RUN python3 -m pip install --no-cache-dir "tensorfold @ git+${TF_REPO}@${TF_REF}" \
+    && python3 -m pip install --no-cache-dir "transformers==5.17.0" av \
     && python3 -c "import torch; print('torch', torch.__version__)" \
     && python3 -c "import tensorfold; print('tensorfold', tensorfold.__version__)" \
     && python3 -c "from tensorfold.families.qwen4_exp.cuda import nvfp4, nvfp4_moe; print('NVFP4 route present')" \
+    && python3 -c "from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5VisionModel; print('vision tower modules present')" \
     && mkdir -p /hf /state /models
 
 # /hf    Hugging Face cache (186 GB for this checkpoint)      -> host bind
