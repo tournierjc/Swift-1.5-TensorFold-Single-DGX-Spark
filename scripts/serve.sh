@@ -12,7 +12,8 @@ caller=()
 # arm you asked for is not the arm you measured (TENSORFOLD_FACES_FP8=xall served .env's all, twice).
 for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
            TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
-           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
+           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 \
+           TENSORFOLD_FACES_12BIT TENSORFOLD_PLE_PREFETCH; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -61,8 +62,11 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # rows (all: every BF16 face), which a round reads instead - see "8-bit dense faces" in the README. It is off
 # unless set: the copy is coarser than the rows, and the MTP head drafts less well against a body it was not
 # calibrated for, so measure it before keeping it.
+# TENSORFOLD_FACES_12BIT={1,all} is the lossless shared-exp 12-bit lane (bit-identical unpack; fused decode
+# matmul). Prefer it over FACES_FP8 when measuring quality-neutral speed. Off unless set.
+# TENSORFOLD_PLE_PREFETCH is optional only — warm Spark A/B was flat (ON≈OFF); do not treat it as required.
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_FACES_12BIT TENSORFOLD_PLE_PREFETCH; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 
