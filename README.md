@@ -158,12 +158,17 @@ prompt (12.3 s) and two requests sharing a long *system* block (17.8 s). A cache
 prompts will therefore conclude the cache is unimplemented — the wrong verdict, and one this rig published before
 correcting it.
 
-It serves **one conversation at a time**. With a single conversation, both a ~4k and a ~20k prompt hit on turn 2
-and every turn after. With four conversations *interleaved*, every turn returned `cached_tokens=0` — at 32
-checkpoint slots and again at 200, so the limit is not the slot count. The code's own note gives the reason: "LRU
-caches require strict-prefix hits because GDN state cannot truncate". The consequence is worth knowing before
-tuning anything: alone at the server every turn after the first is nearly free, but one interleaved session puts
-the full prefill back on the bill. `--spill-gib` and `--snapshot-dir` are plumbed on CUDA (`checkpoint_slots`
+It is **per lane, and the lane count is the limit**. Measured with `--parallel 3` and a barrier synchronising the
+sends: three conversations running *simultaneously*, one request in flight each, all hit on turns 2 and 3 —
+`cached_tokens=3476`, **0.42 s** wall each — while their three cold first turns took **6.68 s** apiece, three times a
+single cold prefill and therefore proof that the three requests really did occupy three lanes. Four or six
+conversations *rotating* over those same three lanes hit **never**, at 32 checkpoint slots and again at 200.
+
+So the working rule is **up to `--parallel` concurrent conversations each keep their own prefix**, and beyond that
+they evict one another: at three lanes, a fourth conversation degrades all of them. Read the earlier claim in this
+section — "one conversation at a time" — as the artefact of probing with more conversations than there were lanes.
+The code's note still explains the shape of it: "LRU caches require strict-prefix hits because GDN state cannot
+truncate". `--spill-gib` and `--snapshot-dir` are plumbed on CUDA (`checkpoint_slots`
 reaches `CheckpointStore` in `server/app.py`) and the recipe already points snapshots at the persistent `/state`
 bind; neither moved a number in this sweep.
 

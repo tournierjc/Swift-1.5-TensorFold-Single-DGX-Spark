@@ -280,9 +280,13 @@ cold call took **12.2 s**. Re-asking the *identical* prompt and two requests sha
 return `cached_tokens=0` — 12.3 s and 17.8 s. A probe built on repeated identical prompts therefore concludes the
 cache is unimplemented; that wrong verdict stood in this file for a session before the extension pattern was tried.
 
-It serves one conversation at a time. A single conversation hits on turn 2 and after, at ~4k tokens as well as at
-~20k. Four conversations *interleaved* returned `cached_tokens=0` on every turn, at 32 checkpoint slots and again
-at 200 — the limit is not the slot count. `cached-tokens` also never appears for a shared system block, which is
+**It is per lane, and the lane count — not the slot count — is the limit.** With `--parallel 3` and a barrier
+synchronising the sends, three conversations running *simultaneously* all hit on turns 2 and 3
+(`cached_tokens=3476`, 0.42 s each), while their three cold first turns took 6.68 s apiece — exactly three times a
+single cold prefill, so the three requests did occupy three lanes. Four and six conversations *rotating* over those
+three lanes hit NEVER, at 32 checkpoint slots and again at 200. The "one conversation at a time" reading that stood
+here was that artefact: up to `--parallel` concurrent conversations each keep their prefix, and beyond it they evict
+one another. Size the lane count to the concurrency you expect. `cached-tokens` also never appears for a shared system block, which is
 what "pinned system blocks bypass slot limits" in the code means in practice. The plumbing is real on CUDA:
 `checkpoint_slots` reaches `CheckpointStore` in `server/app.py:133`, and the recipe already points `--snapshot-dir`
 at the persistent `/state` bind, not the in-container default.
