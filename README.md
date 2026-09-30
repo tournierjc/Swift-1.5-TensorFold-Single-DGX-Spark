@@ -245,8 +245,12 @@ ranked on; the last row is the replies the rig's own bench logs quote):
 | the model's own output | 575 | 99.3043% | 99.3043% | 94.9565% |
 
 The last column is why the engine's list is kept as the floor: dropping it to shrink the draft head costs 0.5
-to 6 points of coverage on every slice. Coverage is what stands in for acceptance here -- **no decode rate
-was measured**, because that needs a full 186 GB load and this rig has not run one.
+to 6 points of coverage on every slice.
+
+Decode rate was measured too, with the full 186 GB checkpoint loaded, one list against the other: it came out
+**neutral** -- prose 35.4 tok/s against the engine's list's 35.5, and code 49.5 against 49.6. The decoding win a
+reduced list is worth was already banked in the engine's own 79,591 ids; the 423 this rig adds are kept for the
+coverage that list leaves on the table, not for a rate, and they cost none.
 
 To rebuild it, from the repository root (the image carries `tokenizers`; `HF_DIR` comes from `.env`):
 
@@ -298,7 +302,7 @@ scripts/stop.sh         stop this rig's containers
 docs/engine-status.md   engine versions, the change history, and every benchmark table
 scripts/build_draft_vocab.py  builds the MTP draft head's reduced vocabulary (ported from mia's recipe)
 tests/test_draft_vocab.py     the builder's rules and the vocabulary the image installs
-patch/README.md         the files copied over the installed tensorfold package when TF_LOCAL=1
+patch/README.md         what this rig changes in the engine: the overlaid files and their source branches
 patch/draft_vocab.txt   that overlay's MTP draft vocabulary (80,014 ids)
 pytest.ini              default test collection: this rig's tests/, not the engine checkouts under dev/
 .env.sample             copy to .env: paths, port, HF token, EXTRA_ARGS
@@ -308,16 +312,31 @@ Weights, caches and logs stay on the host; the image holds the engine only. `scr
 installed `tensorfold --version` and imports `tensorfold.families.qwen4_exp.cuda.nvfp4`, a module that exists
 only on this branch, so a silently wrong build fails at build time.
 
-## Branches
+## Patch sources
 
-Every change this rig carries as its own branch, and what it is for. All three are off `main`; the
-vocabulary one stacks on the Dockerfile one, because the Dockerfile is what copies `patch/` into the image.
+`patch/` is the whole of what this rig changes in the engine it serves: files copied over the installed
+`tensorfold` package at build time. Each one is sourced from a branch of
+[`tournierjc/TensorFold`](https://github.com/tournierjc/TensorFold), the fork this rig's engine changes are
+developed on -- a change lives on its branch there, not in this repository. The image installs the revision the
+Dockerfile pins (`TF_REPO`/`TF_REF`); `patch/` is what goes on top of it.
 
-| Branch | Head | What it carries |
-| --- | --- | --- |
-| `fix/dockerfile-file-level-overlay` | `72f6245c9d4bcf3839c033be0cd5549971100b7d` | The file-level overlay: `patch/` is a list of files copied over the installed engine on **every** build -- only the files that differ, each derived from the revision `TF_REF` installs -- and the vocabulary it lands is asserted present, non-empty and sorted. Overlaying a whole working tree instead is how the image once shipped an older `vision/config.py` and refused the checkpoint at launch. |
-| `feat/mtp-draft-vocab-port` | `1e2cb118119e3b7e725b515c674893980766d797` | The ported MTP draft vocabulary: `patch/draft_vocab.txt` (80,014 ids), `scripts/build_draft_vocab.py`, `tests/test_draft_vocab.py`, `pytest.ini`, and the "MTP draft vocabulary" section that branch adds to this README. Stacks on `fix/dockerfile-file-level-overlay`. |
-| `fix/serve-env-precedence` | `a90e4bca7a6ba60b2fb98f7d9310a932f7d26ba8` | `scripts/serve.sh`: the caller's environment must win over `.env` for *every* knob `docker_env` forwards, not only the serve knobs. Without it `TENSORFOLD_FACES_FP8=xall scripts/serve.sh` served `.env`'s `all`, so two arms that were meant to differ ran the same configuration and the measurement was silently wrong. |
+| File this rig overlays | Lands at, inside the installed package | Source branch in `tournierjc/TensorFold` | Branch head |
+| --- | --- | --- | --- |
+| `patch/draft_vocab.txt` | `tensorfold/families/qwen4_exp/cuda/draft_vocab.txt` | `feat/mtp-draft-vocab` | `c37e77a32096bd2327695ee400034bfd71dcb248` |
+
+One file, one branch, today. What belongs to this rig rather than to the engine stays here: the builder that
+produced the file (`scripts/build_draft_vocab.py`), the checks that hold it to its invariants
+(`tests/test_draft_vocab.py`, `pytest.ini`), and the "MTP draft vocabulary" section above.
+
+### The overlay itself
+
+`patch/` is a **list of files**, never a whole working tree. The Dockerfile copies it over the installed
+package on **every** build -- `COPY patch /tmp/localpatch`, then `cp -a` into `families/qwen4_exp/cuda/`, then an
+assertion that the vocabulary it landed is present, non-empty and sorted -- so `scripts/build.sh` with no
+arguments produces the patched engine, and there is no opt-in flag to leave unset. Overlaying a whole working
+tree instead replaces every file that tree lacks at whatever revision it happens to carry, which is how this
+image once shipped an older `vision/config.py` and refused the checkpoint at launch. Keep it to files that
+differ, each derived from the revision `TF_REF` installs, and check the image still starts before keeping it.
 
 The numbers each change is kept for are in the sections above; `docs/engine-status.md` holds the change
 history.

@@ -1,16 +1,20 @@
 # patch/
 
-Files here are copied over the installed `tensorfold` package when the image is built with
-`TF_LOCAL=1 scripts/build.sh` (see the Dockerfile). It is a **list of files**, never a tree: an overlay of a
-whole working tree replaces every file that tree lacks at whatever revision it happens to carry, which is how
-an older `vision/config.py` once shipped and refused the checkpoint at launch. Keep it to files that differ,
-each derived from the revision `TF_REF` installs.
+Files here are copied over the installed `tensorfold` package on **every** build -- the Dockerfile's
+`COPY patch /tmp/localpatch` block, with no opt-in flag to leave unset. Where a file comes from a branch of the
+engine fork rather than from this rig, the README's "Patch sources" section names the branch it is sourced
+from. This is a **list of files**, never a tree: an overlay of a whole working tree replaces every file that
+tree lacks at whatever revision it happens to carry, which is how an older `vision/config.py` once shipped and
+refused the checkpoint at launch. Keep it to files that differ, each derived from the revision `TF_REF`
+installs.
 
 ## `draft_vocab.txt`
 
-The MTP draft head's reduced vocabulary for this rig. When `TF_LOCAL=1 scripts/build.sh` copies this
-directory over the installed package, this file lands on `families/qwen4_exp/cuda/draft_vocab.txt` -- the
-name `draft_token_ids("default")` reads. 80,014 sorted, unique ids: the engine's own shipped 79,591-id list
+The MTP draft head's reduced vocabulary for this rig, sourced from `feat/mtp-draft-vocab` in
+`tournierjc/TensorFold` (the README's "Patch sources" has the branch's head). The Dockerfile's overlay copies
+this directory over the installed package on every build, so this file lands on
+`families/qwen4_exp/cuda/draft_vocab.txt` -- the name `draft_token_ids("default")` reads. 80,014 sorted,
+unique ids: the engine's own shipped 79,591-id list
 whole (rule 1: a base list is a floor), plus 423 ids ranked by frequency over the corpus under test
 (rule 3), with the byte-fallback range pinned (rule 2). It is a strict superset of the 79,591-id list the
 built image installs (`swift-tensorfold:local`, digest
