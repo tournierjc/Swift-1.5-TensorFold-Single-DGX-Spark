@@ -8,7 +8,11 @@ cd "$(dirname "$0")/.."
 # replaced them (a build asked for 1911880 came out as .env's pinned b4bf826, and the image it produced was
 # the pinned one). The values that were in the environment are put back over .env's.
 caller=()
-for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS; do
+# Every knob docker_env forwards has to be listed here too: one that is not comes back from .env, and the
+# arm you asked for is not the arm you measured (TENSORFOLD_FACES_FP8=xall served .env's all, twice).
+for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
+           TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
+           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
