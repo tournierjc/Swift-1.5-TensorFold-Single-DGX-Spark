@@ -205,6 +205,64 @@ first token's decode sits inside TTFT, so it is a slight underestimate), and the
 entirely on `reasoning_tokens`, so no `content` delta is emitted and the client sees no first token. Read
 `reasoning_content` as well, raise `max_tokens`, or point the bench at a `--no-thinking` server.
 
+## MTP draft vocabulary
+
+The draft head does not score the checkpoint's whole vocabulary. It scores a list of token ids the engine
+reads from `families/qwen4_exp/cuda/draft_vocab.txt` (`draft_token_ids("default")`; the engine documents the
+list in its `docs/recipes/qwen3.8-flash-next.md`). A token outside the list can never be drafted, and every
+draft is verified against the model's own samples, so a missing token costs acceptance and never
+correctness -- which makes the list a pure speed decision, and worth choosing deliberately.
+
+`patch/draft_vocab.txt` is the list this rig installs **by default** (every build copies `patch/` over the installed engine, so `scripts/build.sh` with no arguments produces it -- there is no opt-in flag to leave unset, the failure mode that cost the sibling recipe ~17%): **80,014 ids** -- the engine's shipped 79,591-id list
+whole, plus **423** ids ranked by frequency over the engine's source, its tests and the CPython stdlib beside
+it, with the byte-fallback range pinned (ids 0-255, what BPE falls back to for accents, CJK and emoji).
+Being a strict superset of the engine's list, it cannot lower coverage on any text: 0 of the engine's ids
+are missing, checked against the list the built image installs
+(`88d5b483a849ae9245b78b69f41f11cdfc8b5c024f0786c1c8196263857cc93e`, the digest the engine's own
+`docs/recipes/qwen3.8-flash-next.md` publishes). This file's own digest is
+`8facf56e11ad522ca8ba1d396755b6ce7cc98f2bf226498780fcc7806231c192`.
+
+**Credit.** The construction is ported from MIA AI Lab's reduced-vocabulary MTP drafting,
+["mia's recipe"](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark) --
+`files/build_draft_vocab.py`, `files/build_draft_vocab_extend.py` and its vLLM wiring
+`files/patch_mtp_draft_vocab.py` (AGPL-3.0-or-later, Copyright (C) 2026
+[MiaAI Lab](https://x.com/MiaAI_lab)). `scripts/build_draft_vocab.py` here is this rig's adaptation for the
+TensorFold `qwen4_exp` CUDA engine, and keeps the three rules that script learned: a `--base` list is a floor
+and is never lost to a ranking; the byte-fallback range is pinned whatever its frequency; and only real text
+adds ids, by frequency.
+
+Coverage on held-out slices, measured with `scripts/build_draft_vocab.py` (nothing in these slices was
+ranked on; the last row is the replies the rig's own bench logs quote):
+
+| Held-out slice | Tokens | Engine's list (79,591) | This rig (80,014) | Ranked only, no floor (32,905) |
+| --- | ---: | ---: | ---: | ---: |
+| engine `docs/**/*.md` | 32,752 | 99.4046% | **99.9084%** | 99.1268% |
+| engine `README.md` | 5,294 | 99.4333% | **99.9244%** | 99.2255% |
+| engine `CHANGELOG.md` | 2,823 | 99.3270% | **99.8229%** | 98.8665% |
+| this rig's `README.md` | 3,280 | 99.6037% | **99.8780%** | 97.7134% |
+| this rig's `scripts/*.sh` | 2,940 | 99.4898% | **99.8639%** | 93.5374% |
+| mia's recipe `README.md` | 6,874 | 99.4908% | **99.8109%** | 97.4833% |
+| the model's own output | 575 | 99.3043% | 99.3043% | 94.9565% |
+
+The last column is why the engine's list is kept as the floor: dropping it to shrink the draft head costs 0.5
+to 6 points of coverage on every slice. Coverage is what stands in for acceptance here -- **no decode rate
+was measured**, because that needs a full 186 GB load and this rig has not run one.
+
+To rebuild it, from the repository root (the image carries `tokenizers`; `HF_DIR` comes from `.env`):
+
+```bash
+TOK=$(echo /hf/hub/models--ukisai--Swift-1.5-Qwen3.8-Flash-Next-NVFP4/snapshots/*/tokenizer.json)
+docker run --rm --user "$(id -u):$(id -g)" --entrypoint python3 \
+  -v "$PWD":/rig -v "$HF_DIR":/hf:ro -v /usr/lib/python3.12:/stdlib:ro swift-tensorfold:local -B \
+  /rig/scripts/build_draft_vocab.py "$TOK" /rig/patch/draft_vocab.txt \
+  --base /rig/dev/repo/src/tensorfold/families/qwen4_exp/cuda/draft_vocab.txt --size 98304 \
+  '/rig/dev/repo/src/**/*.py' '/rig/dev/repo/tests/**/*.py' '/stdlib/**/*.py'
+```
+
+Add the model's own output as `.jsonl` (a `text` field per line, `:N` to repeat it) to weight it against the
+generic corpus; `--help` documents `--base`, `--byte-fallback-max`, `--keep-below`, `--min-count`,
+`--holdout` and `--sweep`. `tests/test_draft_vocab.py` checks the builder's rules and the installed file; `pytest.ini` keeps the engine checkouts under `dev/` out of that run.
+
 ## Troubleshooting
 
 - **`serve` exits 1 with `--ple-on-ssd reads the MLX checkpoint's n-gram shards from disk; an NVFP4 checkpoint's
@@ -238,6 +296,11 @@ scripts/bench.sh        prose, code and prefill speed against a running server
 bench/speed.py          what bench.sh runs: streaming TTFT + the server's usage, two rounds a workload
 scripts/stop.sh         stop this rig's containers
 docs/engine-status.md   engine versions, the change history, and every benchmark table
+scripts/build_draft_vocab.py  builds the MTP draft head's reduced vocabulary (ported from mia's recipe)
+tests/test_draft_vocab.py     the builder's rules and the vocabulary the image installs
+patch/README.md         the files copied over the installed tensorfold package when TF_LOCAL=1
+patch/draft_vocab.txt   that overlay's MTP draft vocabulary (80,014 ids)
+pytest.ini              default test collection: this rig's tests/, not the engine checkouts under dev/
 .env.sample             copy to .env: paths, port, HF token, EXTRA_ARGS
 ```
 
@@ -262,3 +325,18 @@ history.
 ## License
 
 MIT (this repository). TensorFold is MIT; the model weights keep their own license on Hugging Face.
+
+## Credits
+
+- [TensorFold](https://github.com/ashhart/TensorFold) by Ash Hart and the TensorFold contributors (MIT) is
+  the engine this rig serves, including the reduced-vocabulary MTP drafting path the list above feeds.
+- The MTP draft vocabulary is built with a technique ported from **MIA AI Lab's** reduced-vocabulary MTP
+  drafting, ["mia's recipe"](https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Single-DGX-Spark)
+  (AGPL-3.0-or-later, Copyright (C) 2026 [MiaAI Lab](https://x.com/MiaAI_lab)):
+  `files/build_draft_vocab.py`, `files/build_draft_vocab_extend.py` and its vLLM wiring
+  `files/patch_mtp_draft_vocab.py`. What is taken is the technique -- the corpus doctrine and its three rules
+  -- re-expressed for this engine in `scripts/build_draft_vocab.py` and `patch/draft_vocab.txt`; no file from
+  that repository is copied, and this repository stays MIT.
+- The checkpoint is
+  [`ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`](https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4);
+  the weights keep their own license on Hugging Face.
