@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 # replaced them (a build asked for 1911880 came out as .env's pinned b4bf826, and the image it produced was
 # the pinned one). The values that were in the environment are put back over .env's.
 caller=()
-for var in TF_REF IMAGE; do
+for var in TF_REPO TF_REF IMAGE; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -16,6 +16,9 @@ for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 IMAGE="${IMAGE:-swift-tensorfold:local}"
 args=()
 [[ -n "${TF_REF:-}" ]] && args+=(--build-arg "TF_REF=${TF_REF}")
+# TF_REPO too: the Dockerfile's default is the upstream, so without this a fork branch can never be
+# built whatever ref is asked for - pip reports it as `pathspec ... did not match any file(s)`.
+[[ -n "${TF_REPO:-}" ]] && args+=(--build-arg "TF_REPO=${TF_REPO}")
 
 echo "[build] image=${IMAGE}${TF_REF:+  tensorfold ref=${TF_REF}}"
 docker build "${args[@]}" -t "${IMAGE}" .
