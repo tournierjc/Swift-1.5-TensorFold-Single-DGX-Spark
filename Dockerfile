@@ -41,6 +41,17 @@ RUN python3 -m pip install --no-cache-dir "tensorfold @ git+${TF_REPO}@${TF_REF}
     && python3 -c "from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5VisionModel; print('vision tower modules present')" \
     && mkdir -p /hf /state /models
 
+# patch/ is part of the recipe: EVERY build copies it over the installed engine, so the vocabulary below is
+# what `scripts/build.sh` produces with no arguments and no opt-in flag to leave unset -- the sibling recipe
+# lost ~17% to exactly that. It holds ONLY the files that differ, each derived from the revision TF_REF
+# installs. Overlaying a whole working tree instead replaces every file that tree lacks at the version it
+# happens to carry, which is how this image once shipped an older vision gate that refused the checkpoint
+# at launch: keep the patch a list of files, and check it still starts before keeping it.
+COPY patch /tmp/localpatch
+RUN pkg="$(python3 -c 'import tensorfold, os; print(os.path.dirname(tensorfold.__file__))')" \
+    && cp -a /tmp/localpatch/. "${pkg}/families/qwen4_exp/cuda/" \
+    && PKG="${pkg}" python3 -c "import os, pathlib; p = pathlib.Path(os.environ['PKG'], 'families/qwen4_exp/cuda/draft_vocab.txt'); ids = [int(x) for x in p.read_text().split()]; assert ids and ids == sorted(set(ids)), p; print('[build] draft vocabulary:', len(ids), 'ids overlaid')"
+
 # /hf    Hugging Face cache (186 GB for this checkpoint)      -> host bind
 # /state kernel caches: triton, torch extensions, inductor    -> host bind
 # /models local checkpoints, read-only                        -> host bind
