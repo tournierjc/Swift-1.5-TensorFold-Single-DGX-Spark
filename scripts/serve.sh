@@ -12,7 +12,7 @@ caller=()
 # arm you asked for is not the arm you measured (TENSORFOLD_FACES_FP8=xall served .env's all, twice).
 for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
            TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
-           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
+           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_PLE_PREFETCH; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -57,12 +57,13 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # The CUDA crash switches, forwarded only when set. TORCH_USE_CUDA_DSA=1 turns a bad access into a device-side
 # assert naming the kernel and line; PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True helps fragmentation.
 # CUDA_LAUNCH_BLOCKING=1 serialises launches, so keep it off while graphs are captured.
+# TENSORFOLD_PLE_PREFETCH=0 turns off decode n-gram page advice (default on in the pinned tip).
 # TENSORFOLD_FACES_FP8=1 loads the DeltaNet and attention linears with an 8-bit copy beside the stored BF16
 # rows (all: every BF16 face), which a round reads instead - see "8-bit dense faces" in the README. It is off
 # unless set: the copy is coarser than the rows, and the MTP head drafts less well against a body it was not
 # calibrated for, so measure it before keeping it.
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_PLE_PREFETCH; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 
