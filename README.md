@@ -245,6 +245,20 @@ Weights, caches and logs stay on the host; the image holds the engine only. `scr
 installed `tensorfold --version` and imports `tensorfold.families.qwen4_exp.cuda.nvfp4`, a module that exists
 only on this branch, so a silently wrong build fails at build time.
 
+## Branches
+
+Every change this rig carries as its own branch, and what it is for. All three are off `main`; the
+vocabulary one stacks on the Dockerfile one, because the Dockerfile is what copies `patch/` into the image.
+
+| Branch | Head | What it carries |
+| --- | --- | --- |
+| `fix/dockerfile-file-level-overlay` | `72f6245c9d4bcf3839c033be0cd5549971100b7d` | The file-level overlay: `patch/` is a list of files copied over the installed engine on **every** build -- only the files that differ, each derived from the revision `TF_REF` installs -- and the vocabulary it lands is asserted present, non-empty and sorted. Overlaying a whole working tree instead is how the image once shipped an older `vision/config.py` and refused the checkpoint at launch. |
+| `feat/mtp-draft-vocab-port` | `1e2cb118119e3b7e725b515c674893980766d797` | The ported MTP draft vocabulary: `patch/draft_vocab.txt` (80,014 ids), `scripts/build_draft_vocab.py`, `tests/test_draft_vocab.py`, `pytest.ini`, and the "MTP draft vocabulary" section that branch adds to this README. Stacks on `fix/dockerfile-file-level-overlay`. |
+| `fix/serve-env-precedence` | `a90e4bca7a6ba60b2fb98f7d9310a932f7d26ba8` | `scripts/serve.sh`: the caller's environment must win over `.env` for *every* knob `docker_env` forwards, not only the serve knobs. Without it `TENSORFOLD_FACES_FP8=xall scripts/serve.sh` served `.env`'s `all`, so two arms that were meant to differ ran the same configuration and the measurement was silently wrong. |
+
+The numbers each change is kept for are in the sections above; `docs/engine-status.md` holds the change
+history.
+
 ## License
 
 MIT (this repository). TensorFold is MIT; the model weights keep their own license on Hugging Face.
