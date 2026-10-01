@@ -196,14 +196,34 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
 ## Checkpoint and engine detail (moved out of the README)
 
 - Engine pinned by the `Dockerfile` as `ARG TF_REF`:
-  `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6`, `tournierjc/TensorFold@integration/0.6.0` — upstream
-  `ashhart/TensorFold@c464617` (0.6.0) plus the rig's own changes, one commit each: the 8-bit projection
-  copies, the `qwen4_exp` vision port, the 80,014-id draft vocabulary, the PLE row prefetch and the 12-bit
-  decode faces. The README's "Engine revision and the branches" lists every branch and its head.
+  `808767fd479c6bd8dbb2eb68f2a3537f75e6d520`, `tournierjc/TensorFold@integration/0.6.1` — upstream
+  `ashhart/TensorFold@17c73e1` (0.6.1) plus the rig's own changes, one commit each: the 8-bit projection
+  copies, video input on the vision frontend, the 80,014-id draft vocabulary, the PLE row prefetch and the
+  12-bit decode faces. The README's "Engine revision and the branches" lists every branch and its head.
   History: the rig served `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3,
   upstream PR [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) merged as 0.3.6.3) and
-  before that the 0.3.6.2 `nvfp4-flash-next` branch, then 0.5.0 with three PRs on top — the tables below were
-  taken there, not on 0.6.0.
+  before that the 0.3.6.2 `nvfp4-flash-next` branch, then 0.5.0 with three PRs on top, then 0.6.0
+  (`c3fa14f4`, `integration/0.6.0`) — the speed tables below were taken on 0.5.0, not on 0.6.x.
+- **The 0.6.1 rebase.** 54 commits and 200 files (+11,886/−598) over 0.6.0's tip. In, out and what it costs:
+  - **Upstream 0.6.1 serves images on `qwen4_exp`.** The image port this rig had carried since 0.6.0 is the
+    same MiaAI-Lab patch (`EncodedVision`, `vision_config`, `image_positions` byte-identical; upstream's own
+    `tests/cuda/test_flashnext_vision.py` asserts `pbuf.rope_rows` and `st.rope_delta`, the names the port
+    introduced), so the port came *out*: what the branch carries now is video, on top of upstream's frontend,
+    as `feat/vision-video`. Upstream's frontend also moved the per-stream rotary tables into `image_rows.py`,
+    which is where the video path now reads them.
+  - **Upstream reserves 4 GiB for the tower's workspace** (`VISION_WORKSPACE` in
+    `families/qwen4_exp/cuda/engine.py`), independently of the tower's own estimate, and counts it against the
+    startup admission. This rig sets `TENSORFOLD_VISION_WORKSPACE_MIB=1280` — its measured peaks are 0.76 GiB
+    for a 4M-pixel image and 0.83 GiB for a video — so an unset value would plan ~2.7 GiB more than what was
+    measured. The knob is new in 0.6.1 (0..16,384 MiB).
+  - **The draft vocabulary is still not upstream**: 79,591 ids there, 80,014 on the branch (423 ids this
+    rig's corpus needs), which is what the build assertion holds.
+  - **The rest of the branch replayed clean**: the 8-bit copies, the prefetch and the 12-bit faces touch files
+    0.6.1 barely moved (`bf16.py`, `weights.py`, `host_table.py`, `decode.py`, `forward.py`, `multi.py`). The
+    5 commits rebased with one conflict hunk — the vision path — because the vision port is exactly what
+    upstream had merged in the meantime. Verified after the rebase: `compileall` clean, the branch's import
+    carries `tensorfold 0.6.1` with `vision FAMILIES = ('qwen3_5', 'qwen4_exp', 'glm5_next')`, the kernel lint
+    over `src/` finds nothing, and 20 new CPU tests cover the video prompt path.
 - **The 0.6.0 rebase.** Two of those three PRs are upstream now, with the same patch, so the rig no longer
   carries them: the multi-row item-16 pair path (#102, upstream as `9933492`) and the fp32 reduce / `_fp4mm`
   block change (#105, upstream as `443ad4a`). The third, the 8-bit projection copies (#104), upstream declined

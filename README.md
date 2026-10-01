@@ -1,22 +1,24 @@
 # Swift 1.5 on TensorFold — one DGX Spark
 
 A test rig that serves the Swift 1.5 NVFP4 checkpoint on a single DGX Spark (GB10, 128 GB unified memory)
-with [TensorFold](https://github.com/ashhart/TensorFold) 0.6.0: FP4 routed experts, BF16 everywhere else, and
+with [TensorFold](https://github.com/ashhart/TensorFold) 0.6.1: FP4 routed experts, BF16 everywhere else, and
 the PLE layer's n-gram table in the BF16 layout this revision publishes.
 
 The sibling rig [`Qwen3.8-Flash-Next-Single-DGX-Spark`](https://github.com/tournierjc/Qwen3.8-Flash-Next-Single-DGX-Spark)
 serves the same model family with a patched vLLM; this one runs the TensorFold CUDA route end to end on the
-Spark. The image carries the vision path: `transformers==5.17.0`, `av`, and a local port of the `qwen4_exp` vision
-patch — a port rather than a flag, because the upstream accepts only `qwen3_5` here. It is dormant unless
-`--vision` is passed, and it needs at least two lanes. Verified end to end: a solid red square and a solid blue
-square answered "Rouge" (2.7 s) and "Bleu" (2.9 s).
+Spark. The image carries the vision path: `transformers==5.17.0`, `av`, Pillow and the `qwen4_exp` frontend.
+Upstream 0.6.1 serves **images** on this family now — the same MiaAI-Lab port this rig had carried since 0.6.0 —
+so what the branch adds there is **video**: a clip is sampled at 2 fps, bounded to 256 frames, and its frame
+groups ride the image path as extra placeholder blocks. Vision is dormant unless `--vision` is passed, and it
+needs at least two lanes. Verified end to end: a solid red square and a solid blue square answered "Rouge"
+(2.7 s) and "Bleu" (2.9 s).
 
 ## What it runs
 
 | | |
 | --- | --- |
 | Model | `ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4`, revision `3ff05202` — 186.4 GB over 296,474 tensors |
-| Engine | TensorFold **0.6.0** (`ashhart/TensorFold@c464617`), served from the fork branch `integration/0.6.0` — the `Dockerfile` pins that branch's commit, override with `TF_REF`. On top of 0.6.0 it carries: the 8-bit projection copies gated by `TENSORFOLD_FACES_FP8`, the `qwen4_exp` vision port (a port rather than a flag: upstream accepts only `qwen3_5` there), the 80,014-id MTP draft vocabulary, and the PLE row prefetch. Two changes this rig used to carry — the multi-row item-16 pair path and the fp32 reduce / `_fp4mm` block — are upstream in 0.6.0 and are gone from the branch. A 12-bit decode-face prototype rides along, dormant unless `TENSORFOLD_FACES_12BIT` is set |
+| Engine | TensorFold **0.6.1** (`ashhart/TensorFold@17c73e1`), served from the fork branch `integration/0.6.1` — the `Dockerfile` pins that branch's commit, override with `TF_REF`. On top of 0.6.1 it carries five changes, one commit each: the 8-bit projection copies gated by `TENSORFOLD_FACES_FP8`, **video** input on the vision frontend (upstream 0.6.1 carries the image half of that port), the 80,014-id MTP draft vocabulary, the PLE row prefetch, and a dormant 12-bit decode-face prototype (`TENSORFOLD_FACES_12BIT`). Everything the rig used to carry and upstream has since merged is gone from the branch: the `qwen4_exp` image port, the multi-row item-16 pair path, the fp32 reduce / `_fp4mm` block |
 | Served as | `qwen3.8-flash-next` on `:8083` |
 | Endpoint | OpenAI-compatible (`/health`, `/v1/models`, `/v1/chat/completions`, streaming and tool calls) |
 | Speed | `scripts/bench.sh` → `bench/speed.py`: TTFT, prefill rate and decode rate |
@@ -48,15 +50,16 @@ scripts/smoke.sh                     # in another shell: health, /v1/models, one
 scripts/bench.sh                     # in another shell: prose, code and prefill speed
 ```
 
-The engine the image serves is the fork's `integration/0.6.0` branch, and that is now the `Dockerfile`'s own
-default (`TF_REPO`) — upstream 0.6.0 plus the rig's changes, none of which upstream carries. Build it with no
-arguments. To test another revision, pass both: `TF_REPO` alone is not enough, since without `TF_REF` the build
-resolves the fork's `main` (upstream 0.6.0, no port, no vision) and fails its own draft-vocabulary check.
+The engine the image serves is the fork's `integration/0.6.1` branch, and that is now the `Dockerfile`'s own
+default (`TF_REPO`) — upstream 0.6.1 plus the rig's five changes, none of which upstream carries. Build it with
+no arguments. To test another revision, pass both: `TF_REPO` alone is not enough, since without `TF_REF` the build
+resolves the fork's `main` (upstream 0.6.1: no video, no 8-bit faces, and the unreduced 79,591-id draft
+vocabulary) and fails its own build assertions.
 
 ```bash
 scripts/build.sh                                                        # the pinned integration branch
 TF_REF=<sha|branch> scripts/build.sh                                    # another commit of the same fork
-TF_REPO=https://github.com/ashhart/TensorFold.git TF_REF=v0.6.0 scripts/build.sh   # upstream, for a baseline
+TF_REPO=https://github.com/ashhart/TensorFold.git TF_REF=v0.6.1 scripts/build.sh   # upstream, for a baseline
 ```
 
 Logs go to the terminal that runs `scripts/serve.sh`; `scripts/stop.sh` stops a detached run and an
@@ -139,9 +142,9 @@ curl -fsS http://127.0.0.1:8083/v1/chat/completions \
 
 What the rig last measured — TensorFold **0.5.0** with the three changes that are now the pinned branch's own
 first commits, `--thinking`, three lanes at the full 262144 window, int8 KV, `--mtp-confidence 0.60`, 8-bit
-faces on every layer. These figures have **not** been re-taken on 0.6.0: the rebase replays these paths
-unchanged, but 0.6.0 brings 43 upstream commits of its own, so treat the numbers below as the last reading
-rather than as the current revision's.
+faces on every layer. These figures have **not** been re-taken on 0.6.x: the rebase replays these paths
+unchanged, but 0.6.1 brings 54 upstream commits over 0.6.0's tip, so treat the numbers below as the last
+reading rather than as the current revision's.
 
 - **Long-prompt context (15,460 prompt tokens):** TTFT **9.28 s**, prefill **1666 tok/s**, decode **51.5 tok/s**
 on a short reply.
@@ -219,7 +222,7 @@ list in its `docs/recipes/qwen3.8-flash-next.md`). A token outside the list can 
 draft is verified against the model's own samples, so a missing token costs acceptance and never
 correctness -- which makes the list a pure speed decision, and worth choosing deliberately.
 
-The 80,014-id list this rig serves is **part of the pinned revision** — `integration/0.6.0` carries it as
+The 80,014-id list this rig serves is **part of the pinned revision** — `integration/0.6.1` carries it as
 `families/qwen4_exp/cuda/draft_vocab.txt`, and the Dockerfile fails the build unless the installed package has
 it with that count (a build against upstream or an older tag stops there in seconds instead of scoring 79,591
 ids at run time, the failure mode that cost the sibling recipe ~17%). **80,014 ids** — the engine's shipped
@@ -321,8 +324,10 @@ pytest.ini              default test collection: this rig's tests/, not the engi
 ```
 
 Weights, caches and logs stay on the host; the image holds the engine only. `scripts/build.sh` prints the
-installed `tensorfold --version` and imports `tensorfold.families.qwen4_exp.cuda.nvfp4`, a module that exists
-only on this branch, so a silently wrong build fails at build time.
+installed `tensorfold --version` and imports the symbols that exist only on the pinned branch — video input
+(`tensorfold.vision.videos`), the 8- and 12-bit face helpers (`bf16.py`) and the Flash Next CUDA vision frontend
+— so a silently wrong build fails at build time. (`nvfp4`/`nvfp4_moe` were the old check and proved nothing:
+upstream 0.6.1 ships both.)
 
 ## Engine revision and the branches
 
@@ -331,29 +336,39 @@ Every engine change this rig serves lives on a branch of
 as a file copied into this repository. The image installs the revision the Dockerfile pins
 (`TF_REPO`/`TF_REF`) and overlays **nothing**: the revision carries the whole rig.
 
-The rebase onto upstream 0.6.0 (`c464617`) replayed every branch and dropped what upstream had already merged.
-Two PRs are upstream now, so their branches are gone — the multi-row item-16 pair path
-([#102](https://github.com/ashhart/TensorFold/pull/102)) and the fp32 reduce / `_fp4mm` block change
-([#105](https://github.com/ashhart/TensorFold/pull/105)), both merged in 0.6.0 with the same patch. A third,
-the 8-bit projection copies ([#104](https://github.com/ashhart/TensorFold/pull/104)), upstream declined (*no
-precision traded for speed*) and this rig keeps it: `TENSORFOLD_FACES_FP8=all` carries the rig's reference
-numbers.
+The rebase onto **upstream 0.6.0** (`c464617`) dropped what upstream had already merged: the multi-row item-16
+pair path ([#102](https://github.com/ashhart/TensorFold/pull/102)) and the fp32 reduce / `_fp4mm` block change
+([#105](https://github.com/ashhart/TensorFold/pull/105)), both merged in 0.6.0 with the same patch, so their
+branches are gone. The 8-bit projection copies
+([#104](https://github.com/ashhart/TensorFold/pull/104)) upstream declined (*no precision traded for speed*) and
+this rig keeps: `TENSORFOLD_FACES_FP8=all` carries the rig's reference numbers.
+
+The rebase onto **upstream 0.6.1** (`17c73e1`, 54 commits and 200 files over 0.6.0's tip) dropped one more of
+them: **the `qwen4_exp` image port**. Upstream 0.6.1 serves images on this family with the same MiaAI-Lab
+patch — `EncodedVision`, `vision_config` and `image_positions` are byte-identical, and upstream's own
+`tests/cuda/test_flashnext_vision.py` asserts the names this port introduced (`pbuf.rope_rows`,
+`st.rope_delta`). What stays on the branch is the video half of that work, now its own branch
+`feat/vision-video` and its own commit in the pinned revision.
 
 | Branch in `tournierjc/TensorFold` | Head | What it carries |
 | --- | --- | --- |
-| **`integration/0.6.0`** | `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6` | **the pinned revision**: 0.6.0 + the 8-bit copies + the vision port + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
-| `feat/vision-qwen4-exp` | `addccb5d9a253935ca0f78f46fb931f45d7b909f` | 0.6.0 + the 8-bit copies + the vision port (images and video, `--vision`, two lanes) |
-| `feat/mtp-draft-vocab` | `153bf32ae56c8017acaf75f9fff3a801e8e6f002` | the 80,014-id MTP draft vocabulary |
-| `cursor/ple-row-prefetch-0ff8` | `4aff67d6b1b586197b72a7cc2226014096a5cccc` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts |
-| `cursor/lossless-12bit-faces-0ff8` | `40ebb25e376e06c9f09558dadf143e818dfb1dcb` | the 12-bit shared-exponent decode faces — lossless, `TENSORFOLD_FACES_12BIT`, dormant unless set |
+| **`integration/0.6.1`** | `808767fd479c6bd8dbb2eb68f2a3537f75e6d520` | **the pinned revision**: 0.6.1 + the 8-bit copies + video input + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
+| `feat/vision-video` | `3056063e3b05899d2e8b84769bedac19832efed7` | video input alone, on 0.6.1 (`--vision`; the image half is upstream now) |
+| `integration/0.6.0` | `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6` | the previously pinned revision, on 0.6.0's base: what the rig measured before this rebase |
+| `feat/vision-qwen4-exp` | `286eaca99aecc79813b69182b29d40d060b3cb5c` | the whole vision port (images and video) on 0.6.0's base; its image half is upstream in 0.6.1, superseded by `feat/vision-video` |
+| `feat/mtp-draft-vocab` | `153bf32ae56c8017acaf75f9fff3a801e8e6f002` | the 80,014-id MTP draft vocabulary (0.6.0 base) |
+| `cursor/ple-row-prefetch-0ff8` | `c2c392ba467fa3d4a579fb58f5b806783d6a442d` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts (0.6.0 base) |
+| `cursor/lossless-12bit-faces-0ff8` | `3864881c3508c02a0093d8724d4256facd2692ac` | the 12-bit shared-exponent decode faces — lossless, `TENSORFOLD_FACES_12BIT`, dormant unless set (0.6.0 base) |
 | `pr/host-table-rows-by-file` | `79aa2a06c7ca52ade88a479f33149fcda55906ae` | a round's few n-gram rows read by file over the pool, not one after another (#103, closed unmerged) |
-| `main` | `c4646171139ee8a3c38103eaa1699dad226ec12b` | upstream 0.6.0, realigned |
-| `cursor/lossless-12bit-faces-1ba6` | `410d2ffad389f5248cb5ac652714eb749823fc7a` | the same 12-bit prototype under an older spelling (`kind=` where `-0ff8` uses `face=`), still on the pre-rebase base: kept for the record, superseded |
+| `main` | `17c73e189f5e6a5304cda7ea37f086f9c49b4788` | upstream 0.6.1, realigned |
+| `cursor/lossless-12bit-faces-1ba6` | `410d2ffad389f5248cb5ac652714eb749823fc7a` | the same 12-bit prototype under an older spelling (`kind=` where `-0ff8` uses `face=`), on the pre-0.6.0 base: kept for the record, superseded |
 
-`integration/0.6.0` is what the rig measured with, one commit per change on top of 0.6.0; the branches above
-are the same changes in reviewable units. What belongs to this rig rather than to the engine stays here: the
-builder that produced the vocabulary (`scripts/build_draft_vocab.py`), the checks that hold it to its
-invariants (`tests/test_draft_vocab.py`, `pytest.ini`), and the sections above.
+`integration/0.6.1` is what the rig serves, one commit per change on top of 0.6.1; the branches above are the
+same changes in reviewable units. The four per-unit branches still sit on 0.6.0's base — replaying them is what
+the integration branch already did, and they are kept as the record of each unit rather than rebuilt for its own
+sake. What belongs to this rig rather than to the engine stays here: the builder that produced the vocabulary
+(`scripts/build_draft_vocab.py`), the checks that hold it to its invariants (`tests/test_draft_vocab.py`,
+`pytest.ini`), and the sections above.
 
 ### Why nothing is overlaid any more
 

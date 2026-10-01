@@ -12,7 +12,8 @@ caller=()
 # arm you asked for is not the arm you measured (TENSORFOLD_FACES_FP8=xall served .env's all, twice).
 for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
            TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
-           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
+           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 \
+           TENSORFOLD_VISION_WORKSPACE_MIB; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -61,8 +62,12 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # rows (all: every BF16 face), which a round reads instead - see "8-bit dense faces" in the README. It is off
 # unless set: the copy is coarser than the rows, and the MTP head drafts less well against a body it was not
 # calibrated for, so measure it before keeping it.
+# TENSORFOLD_VISION_WORKSPACE_MIB is the tower's workspace *reserve*. 0.6.1 defaults to 4 GiB whatever the tower's
+# own estimate says, and the reserve is counted against the startup admission, so an unset value plans ~2.7 GiB
+# more than this rig measured with. 1280 is what this rig sets (measured peaks: 0.76 GiB an image, 0.83 GiB a
+# video).
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8; do
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_VISION_WORKSPACE_MIB; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 

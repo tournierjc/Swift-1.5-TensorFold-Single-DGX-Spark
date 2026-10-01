@@ -16,7 +16,7 @@ for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 IMAGE="${IMAGE:-swift-tensorfold:local}"
 args=()
 [[ -n "${TF_REF:-}" ]] && args+=(--build-arg "TF_REF=${TF_REF}")
-# TF_REPO too: the Dockerfile's default is the upstream, so without this a fork branch can never be
+# TF_REPO too: the default is the fork's pinned branch, so without this another repository can never be
 # built whatever ref is asked for - pip reports it as `pathspec ... did not match any file(s)`.
 [[ -n "${TF_REPO:-}" ]] && args+=(--build-arg "TF_REPO=${TF_REPO}")
 
@@ -25,6 +25,8 @@ docker build "${args[@]}" -t "${IMAGE}" .
 
 echo "[build] installed package:"
 docker run --rm "${IMAGE}" --version
+# The symbols that exist only on the pinned branch. nvfp4/nvfp4_moe do not: upstream 0.6.1 ships both, so the
+# echo this replaces proved nothing about the ref that was built.
 docker run --rm --entrypoint python3 "${IMAGE}" -c \
-  "from tensorfold.families.qwen4_exp.cuda import nvfp4, nvfp4_moe; print('NVFP4 route present (branch-only module)')"
+  "from tensorfold.vision.videos import load_videos; from tensorfold.families.qwen4_exp.cuda.bf16 import faces_8bit; print('[build] video input and 8-bit faces present')"
 echo "[build] done: ${IMAGE}"
