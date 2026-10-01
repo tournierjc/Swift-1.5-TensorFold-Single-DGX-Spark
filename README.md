@@ -68,16 +68,27 @@ interrupted download.
 ## Serving on 128 GB
 
 `scripts/preflight.py` prints the whole plan from the checkpoint's headers alone, in seconds, before any load.
-The current serve reports one startup line, and the whole load took **455.1 s**:
+The 0.6.1 serve reports these lines, and the whole load took **214.3 s** (455.1 s on 0.6.0):
 
-    startup estimate 97.39 GiB within 105.28 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
+    startup estimate 98.31 GiB within 104.44 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
+    the 95.4 GiB of mapped tables do not fit beside the weights and caches: lookups will page them from disk, which slows prompts (free memory to keep them resident)
     vision: image and video input, a 0.84 GiB tower with 1.25 GiB of workspace reserved
-    3 streams of 262144 prompt/reply tokens (4799 MiB a stream), eager; int8 KV cache (fp16 scale per 32 values)
+    Flash Next on CUDA: 1 to 6 MTP drafts a round, a chain stops before a later draft under 60%; up to 3 streams, each growing to 262144 prompt/reply tokens while memory lasts (22.1 GiB free for their caches, 4.47 GiB for one at the full window), eager; int8 KV cache (fp16 scale per 32 values); n-gram tables read in 25.3s; 0 decode graphs captured; idle prompt pieces 2048 rows; prompt kernels warmed in 103.6s
 
-The flags this rig runs, `EXTRA_ARGS` in `.env` plus one environment variable (load 383.7 s):
+The second line is not about this revision: the engine has printed it whenever the PLE tables are larger than
+what is left beside the weights and the lanes' caches (`docs/engine-status.md` records it for 0.3.6.3 too), and
+it means their lookups walk the page cache instead of staying resident on their own. This serve's budget came
+out **0.84 GiB lower** than the 0.6.0 reading (104.44 against 105.28 GiB) because three sibling containers
+(`hermes-agent`, `scalesync`, `captcha-solver`) hold memory on this host. `--ple-on-ssd` is the lever if that
+ever costs prompt speed; the numbers below are what it costs today.
 
-    EXTRA_ARGS="--parallel 3 --context 262144 --thinking --reasoning-effort xhigh --vision --max-tokens 32768 --kv-dtype int8 --mtp-confidence 0.60"
+The flags this rig runs, `PARALLEL`, `CONTEXT` and `EXTRA_ARGS` in `.env` plus two environment variables:
+
+    PARALLEL=3
+    CONTEXT=262144
+    EXTRA_ARGS="--thinking --reasoning-effort xhigh --vision --max-tokens 32768 --kv-dtype int8 --mtp-confidence 0.60"
     TENSORFOLD_FACES_FP8=all
+    TENSORFOLD_VISION_WORKSPACE_MIB=1280
 
 - `--parallel 3 --context 262144` — three lanes of the full native 262144 window on one rank (Flash Next, one
   rank). 262144 is the checkpoint's native window and it is granted at three lanes; asking for it at four is
@@ -99,10 +110,15 @@ The flags this rig runs, `EXTRA_ARGS` in `.env` plus one environment variable (l
 - `--max-tokens 32768` — the server-side default, and the flag that matters once `--thinking` is on: a small
   client budget is spent entirely on `reasoning_tokens` and yields no `content` at all (see Measuring speed). A
   client that sends no `max_tokens` gets this default, and content returns normally.
-- `--vision` — image input through the tower, and the reason the lane count is not lower: the engine refuses
-  image input below two lanes (it shares a round's reads, see above). It takes inline base64 images; public
-  HTTP(S) URLs need `--vision-urls` on top, which is deliberately not set. The tower costs 0.84 GiB and
-  reserves 1.25 GiB of workspace.
+- `--vision` — image and **video** input through the tower, and the reason the lane count is not lower: the
+  engine refuses image input below two lanes (it shares a round's reads, see above). It takes inline base64
+  media; public HTTP(S) URLs need `--vision-urls` on top, which is deliberately not set. The tower costs
+  0.84 GiB and reserves 1.25 GiB of workspace (`TENSORFOLD_VISION_WORKSPACE_MIB`; 0.6.1's own default is
+  4096, three times this rig's measured peak). A clip is decoded with PyAV, sampled at 2 fps up to 256 frames,
+  resized into the tower's grid, and sent as one timestamped placeholder block per frame group — the model
+  reads the timestamps (`verified: a 2 s all-red clip answered "the frames show a solid red color across all
+  frames (0.0s, 1.0s, 2.0s)"` in 1.65 s). Upstream 0.6.1 has no video: this half of the vision work is the
+  branch's own.
 - `TENSORFOLD_FACES_FP8=all` — loads BF16 faces as an e4m3 copy a round reads instead of the stored rows; a prompt
   keeps the rows, so the copy is a decode lane, never a prefill one. `1` covers the DeltaNet and attention linears,
   the ones a round re-reads most; `all` covers every BF16 face. Going from `1` to `all` took the three-lane
@@ -140,11 +156,51 @@ curl -fsS http://127.0.0.1:8083/v1/chat/completions \
 
 ## Status of the engine under test
 
-What the rig last measured — TensorFold **0.5.0** with the three changes that are now the pinned branch's own
-first commits, `--thinking`, three lanes at the full 262144 window, int8 KV, `--mtp-confidence 0.60`, 8-bit
-faces on every layer. These figures have **not** been re-taken on 0.6.x: the rebase replays these paths
-unchanged, but 0.6.1 brings 54 upstream commits over 0.6.0's tip, so treat the numbers below as the last
-reading rather than as the current revision's.
+### Measured on the pinned 0.6.1 revision
+
+The rig was rebuilt and redeployed on `integration/0.6.1` and re-measured. Bench: `bench/aggregate.py` for N
+clients (**distinct** prompts — three clients sending the same prefix have the lanes fight over one cached
+prefix, which alone cost 5 tok/s at three lanes — 1024-token replies) and `bench/speed.py` for one client, both
+run from inside the image, with `--thinking` on:
+
+```bash
+docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 swift-tensorfold:local \
+  /bench/aggregate.py --base http://127.0.0.1:8083 --model qwen3.8-flash-next --tokens 1024 --clients 1 2 3
+docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 swift-tensorfold:local \
+  /bench/vision_probe.py --base http://127.0.0.1:8083 --model qwen3.8-flash-next --colour red --cases image video
+```
+
+- **Load:** 214.3 s from the pinned ref (kernel extensions compiled on first start), **118.2 s** once the
+  kernel caches under `STATE_DIR` are warm; the whole 186 GB, n-gram tables read in 25-26 s.
+- **Prefill:** a 2315-token prompt in 1.54 s (1503 tok/s), with `cached_tokens=2314` — this rig's prompts repeat,
+  so that is a cached prefill, not a cold one. A cold 15,460-token prompt measured 1666 tok/s on 0.5.0.
+- **Decode, one client:** **34.8 tok/s** on a 1024-token reply. `speed.py`'s 512-token replies: prose **37.8**,
+  code **49.0** tok/s (`speed.py` reports `TTFT None` on this profile: with `--thinking` the stream's deltas are
+  `reasoning_content`, and the script times `delta.content`).
+- **Aggregate, N clients:** 1 → **34.8**, 2 → **57.1**, 3 → **73.0 tok/s** (2.10x one client), lanes within
+  ~40% of each other (24.3 / 28.4 / 33.6 at three).
+- **Vision, end to end** (`bench/vision_probe.py`, which generates what it asks about and takes the colour as
+  an argument, so the answer has to come from the pixels): a 512x512 solid image answered `Rouge` in **2.40 s**
+  (red) and `Bleu` in **1.27 s** (blue); a 2 s clip, 4 fps, answered `Rouge` in **2.19 s** and `Bleu` in
+  **2.83 s**, its reasoning reading the frame timestamps back ("the frames show a solid red color across all
+  frames (0.0s, 1.0s, 2.0s)") — the video path's first measurement on this rig; a 2048x2048 image (4M pixels,
+  4172 prompt tokens) answered `Rouge` in **7.32 s**. Draft acceptance on the smoke run: 76 of 117 drafts
+  (65%).
+
+**Against the previous pin, same box, same bench, same session** — `swift-tensorfold:060`
+(`integration/0.6.0`, `c3fa14f`) against `swift-tensorfold:local` (`integration/0.6.1`, `808767f`), both loaded
+from the same `.env`: **35.0 / 57.4 / 72.9** against **34.8 / 57.1 / 73.0 tok/s** at one, two and three
+clients. The rebase is free at this bench's resolution, and 0.6.0's own load took 206.9 s against 0.6.1's
+214.3 s. The 0.5.0-era figure of **111.6 tok/s** at three lanes quoted below was taken with a different bench
+(longer replies, a different prompt set): it is not comparable to the numbers above, and these two arms are
+what says the rebase did not cost speed.
+
+### The 0.5.0 readings this rig still quotes
+
+TensorFold **0.5.0** with the three changes that are now the pinned branch's first commits, `--thinking`,
+three lanes at the full 262144 window, int8 KV, `--mtp-confidence 0.60`, 8-bit faces on every layer. These
+figures predate 0.6.0 and were not re-taken on it: the rebase replays these paths unchanged, but 0.6.1 brings
+54 upstream commits over 0.6.0's tip, so read them as the earlier revision's.
 
 - **Long-prompt context (15,460 prompt tokens):** TTFT **9.28 s**, prefill **1666 tok/s**, decode **51.5 tok/s**
 on a short reply.

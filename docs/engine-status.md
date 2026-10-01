@@ -224,6 +224,20 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
     upstream had merged in the meantime. Verified after the rebase: `compileall` clean, the branch's import
     carries `tensorfold 0.6.1` with `vision FAMILIES = ('qwen3_5', 'qwen4_exp', 'glm5_next')`, the kernel lint
     over `src/` finds nothing, and 20 new CPU tests cover the video prompt path.
+  - **Deployed on the Spark, and the whole tree checked against upstream's.** `scripts/build.sh` builds the
+    pinned image (`tensorfold 0.6.1`, the video and 8/12-bit symbols import, the draft vocabulary is 80,014
+    ids), and the served endpoint answered a 512x512 image, a 2048x2048 image (4M pixels, 4172 prompt tokens,
+    7.32 s) and a 2 s video whose reasoning reads the frame timestamps back — the video path's first
+    measurement here. Every one of the 343 test files of the pinned tree was run on its own (120 s each,
+    eight at a time) against a clean `upstream/main` checkout: **the failure sets are identical**, and the only
+    differences are this branch's four own test files (all passing) plus four more skips in
+    `tests/cuda/test_flashnext_nvfp4_kernels.py`, which is the 8/12-bit helper coverage the branch adds. The
+    box has no GPU in that container and no `mlx`, so 142 files report all-skipped and two fail to collect
+    (`test_alternating_kv.py`, `test_dflash_tree_search.py`) — on both trees alike.
+  - **No speed cost, measured rather than argued.** Both pins were served on the same box from the same `.env`,
+    one after the other: `integration/0.6.0` (35.0 / 57.4 / 72.9 tok/s at one, two, three clients) against
+    `integration/0.6.1` (34.8 / 57.1 / 73.0), 206.9 s against 214.3 s to load. The 0.5.0-era 111.6 tok/s at
+    three lanes was a different bench and does not compare; the two arms are what settle it.
 - **The 0.6.0 rebase.** Two of those three PRs are upstream now, with the same patch, so the rig no longer
   carries them: the multi-row item-16 pair path (#102, upstream as `9933492`) and the fp32 reduce / `_fp4mm`
   block change (#105, upstream as `443ad4a`). The third, the 8-bit projection copies (#104), upstream declined
