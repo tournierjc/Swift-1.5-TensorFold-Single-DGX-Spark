@@ -341,7 +341,7 @@ numbers.
 
 | Branch in `tournierjc/TensorFold` | Head | What it carries |
 | --- | --- | --- |
-| **`integration/0.6.0`** | `230c69c010ad7d103a80bb6ff7f0afe29fa1e549` | **the pinned revision**: 0.6.0 + the 8-bit copies + the vision port + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
+| **`integration/0.6.0`** | `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6` | **the pinned revision**: 0.6.0 + the 8-bit copies + the vision port + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
 | `feat/vision-qwen4-exp` | `addccb5d9a253935ca0f78f46fb931f45d7b909f` | 0.6.0 + the 8-bit copies + the vision port (images and video, `--vision`, two lanes) |
 | `feat/mtp-draft-vocab` | `153bf32ae56c8017acaf75f9fff3a801e8e6f002` | the 80,014-id MTP draft vocabulary |
 | `cursor/ple-row-prefetch-0ff8` | `4aff67d6b1b586197b72a7cc2226014096a5cccc` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts |

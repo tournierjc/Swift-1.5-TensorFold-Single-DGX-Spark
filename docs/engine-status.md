@@ -196,7 +196,7 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
 ## Checkpoint and engine detail (moved out of the README)
 
 - Engine pinned by the `Dockerfile` as `ARG TF_REF`:
-  `230c69c010ad7d103a80bb6ff7f0afe29fa1e549`, `tournierjc/TensorFold@integration/0.6.0` — upstream
+  `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6`, `tournierjc/TensorFold@integration/0.6.0` — upstream
   `ashhart/TensorFold@c464617` (0.6.0) plus the rig's own changes, one commit each: the 8-bit projection
   copies, the `qwen4_exp` vision port, the 80,014-id draft vocabulary, the PLE row prefetch and the 12-bit
   decode faces. The README's "Engine revision and the branches" lists every branch and its head.
@@ -213,6 +213,17 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
   package's own file instead of copying one in. Another branch, `pr/host-table-rows-by-file` (#103, closed
   unmerged), keeps the round's n-gram rows read by file over the pool; it is **not** in the pinned branch, so
   it is not in the served image.
+- **The rebase's one defect, and how it surfaced.** 0.6.0 split the attention kernels into a wrapper and a
+  per-head (per-block) worker — `_attn_prep`/`_prep_row` in `glue.py`, `_pool`/`_pool_block` in
+  `attention.py` — and the vision port's rotary parameters (`ROPE`, `DELTA`, `MODE`, `S1`, `S2`) merged into
+  the *workers' bodies* while their signatures kept upstream's shape, and into the wrappers' signatures while
+  their bodies only forwarded. The file is valid Python: `compileall` and the whole CPU suite pass, because
+  nothing on the CPU compiles a kernel — Triton fails on the GPU, at the first request, with a `CompilationError`
+  pointing at the wrapper's call. The same merge left `attn_multi.py`, upstream's new lane kernel, calling those
+  workers without the parameters. Fixed by moving the parameters down with the body (`_prep_row` gains a MODE 3:
+  the row's own stream's offset, for a launch that serves several streams) and by giving `attn_multi.Step` a
+  per-row `rdelta` and per-stream `deltas` table. A rebase that touches kernels needs a static check of kernel
+  names and call arities — the suite cannot see this class of defect.
 - Base image `nvcr.io/nvidia/pytorch:26.07-py3` (36.5 GB as pulled here) — CUDA, torch 2.13, triton, the
   extension compiler.
 - Revision `3ff05202` of the checkpoint: 186.4 GB over 296,474 tensors.
