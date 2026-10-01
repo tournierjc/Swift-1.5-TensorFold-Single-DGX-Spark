@@ -68,6 +68,11 @@ interrupted download.
 ## Serving on 128 GB
 
 `scripts/preflight.py` prints the whole plan from the checkpoint's headers alone, in seconds, before any load.
+It sizes the dense geometry and the window, and it takes no `--vision` flag: it does not add the tower's weights
+or the `TENSORFOLD_VISION_WORKSPACE_MIB` reserve that a `--vision` serve counts in the line below, so read its
+receipt as the non-vision plan. It also cannot run while a serve holds the memory (the second load is refused
+outright: `estimated largest fitting prompt-plus-reply window: 0 tokens`).
+
 The 0.6.1 serve reports these lines, and the whole load took **214.3 s** (455.1 s on 0.6.0):
 
     startup estimate 98.31 GiB within 104.44 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
