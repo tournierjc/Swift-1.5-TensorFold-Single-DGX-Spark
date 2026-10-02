@@ -73,19 +73,25 @@ or the `TENSORFOLD_VISION_WORKSPACE_MIB` reserve that a `--vision` serve counts 
 receipt as the non-vision plan. It also cannot run while a serve holds the memory (the second load is refused
 outright: `estimated largest fitting prompt-plus-reply window: 0 tokens`).
 
-The 0.6.1 serve reports these lines, and the whole load took **214.3 s** (455.1 s on 0.6.0):
+The 0.6.2 serve reports these lines, and the whole load took **210.6 s** on its first start -- the new
+revision's kernel extensions were being compiled (`prompt kernels warmed in 98.2s`) -- and **115.3 s** with the
+kernel caches under `STATE_DIR` warm, which is also what the 0.6.1 arm measured in the same session:
 
-    startup estimate 98.31 GiB within 104.44 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
+    startup estimate 98.31 GiB within 104.95 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
     the 95.4 GiB of mapped tables do not fit beside the weights and caches: lookups will page them from disk, which slows prompts (free memory to keep them resident)
     vision: image and video input, a 0.84 GiB tower with 1.25 GiB of workspace reserved
-    Flash Next on CUDA: 1 to 6 MTP drafts a round, a chain stops before a later draft under 60%; up to 3 streams, each growing to 262144 prompt/reply tokens while memory lasts (22.1 GiB free for their caches, 4.47 GiB for one at the full window), eager; int8 KV cache (fp16 scale per 32 values); n-gram tables read in 25.3s; 0 decode graphs captured; idle prompt pieces 2048 rows; prompt kernels warmed in 103.6s
+    Flash Next on CUDA: 1 to 6 MTP drafts a round, a chain stops before a later draft under 60%; up to 3 streams, each growing to 262144 prompt/reply tokens while memory lasts (22.6 GiB free for their caches, 4.47 GiB for one at the full window), eager; int8 KV cache (fp16 scale per 32 values); n-gram tables read in 25.3s; 0 decode graphs captured; idle prompt pieces 2048 rows; prompt kernels warmed in 3.7s
+
+The n-gram tables cost 25-26 s on every start (25.1 s on the 0.6.1 arm, 25.3 s here) and the 186 GB of weights
+are read once, so a restart on a warm cache is under two minutes.
 
 The second line is not about this revision: the engine has printed it whenever the PLE tables are larger than
 what is left beside the weights and the lanes' caches (`docs/engine-status.md` records it for 0.3.6.3 too), and
-it means their lookups walk the page cache instead of staying resident on their own. This serve's budget came
-out **0.84 GiB lower** than the 0.6.0 reading (104.44 against 105.28 GiB) because three sibling containers
-(`hermes-agent`, `scalesync`, `captcha-solver`) hold memory on this host. `--ple-on-ssd` is the lever if that
-ever costs prompt speed; the numbers below are what it costs today.
+it means their lookups walk the page cache instead of staying resident on their own. **Read that first number as
+the moment's, not the revision's**: 105.28 GiB on 0.6.0, 104.44 GiB at the 0.6.1 deploy, 102.95 GiB on the 0.6.1
+arm served minutes before this one and 104.95 GiB on this arm — three sibling containers (`hermes-agent`,
+`scalesync`, `captcha-solver`) hold memory on this host and their footprint moves between serves.
+`--ple-on-ssd` is the lever if that ever costs prompt speed; the numbers below are what it costs today.
 
 The flags this rig runs, `PARALLEL`, `CONTEXT` and `EXTRA_ARGS` in `.env` plus two environment variables:
 
@@ -161,51 +167,59 @@ curl -fsS http://127.0.0.1:8083/v1/chat/completions \
 
 ## Status of the engine under test
 
-### Measured on the pinned 0.6.1 revision
+### Measured on the pinned 0.6.2 revision
 
-The rig was rebuilt and redeployed on `integration/0.6.1` and re-measured. Bench: `bench/aggregate.py` for N
-clients (**distinct** prompts — three clients sending the same prefix have the lanes fight over one cached
-prefix, which alone cost 5 tok/s at three lanes — 1024-token replies) and `bench/speed.py` for one client, both
-run from inside the image, with `--thinking` on:
+The rig was rebuilt and redeployed on `integration/0.6.2` and measured against the pin it replaces, both arms
+served fresh on the same box from the same `.env` in one session, with one bench for both:
+`scripts/bench-suite.sh <arm>` — a discard pass (the rig's rule: the first pass after a load is cold), then
+`bench/aggregate.py` for N clients (**distinct** prompts — three clients sending the same prefix have the lanes
+fight over one cached prefix, which alone cost 5 tok/s at three lanes — 1024-token replies), `bench/speed.py`
+for one client, and `bench/vision_probe.py`, all run from inside the image, with `--thinking` on.
 
-```bash
-docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 swift-tensorfold:local \
-  /bench/aggregate.py --base http://127.0.0.1:8083 --model qwen3.8-flash-next --tokens 1024 --clients 1 2 3
-docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 swift-tensorfold:local \
-  /bench/vision_probe.py --base http://127.0.0.1:8083 --model qwen3.8-flash-next --colour red --cases image video
-```
+| arm | image | load (warm) | 1 client | 2 clients | 3 clients |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `integration/0.6.1` (`808767f`) | `swift-tensorfold:061` | 115.3 s | 34.9 | 57.2 | 72.9 tok/s |
+| `integration/0.6.2` (`d26e09f`) | `swift-tensorfold:local` | 115.3 s | 35.0 | 57.2 | 73.2 tok/s |
 
-- **Load:** 214.3 s from the pinned ref (kernel extensions compiled on first start), **118.2 s** once the
-  kernel caches under `STATE_DIR` are warm; the whole 186 GB, n-gram tables read in 25-26 s.
-- **Prefill:** a 2315-token prompt in 1.54 s (1503 tok/s), with `cached_tokens=2314` — this rig's prompts repeat,
-  so that is a cached prefill, not a cold one. A cold 15,460-token prompt measured 1666 tok/s on 0.5.0.
-- **Decode, one client:** **34.8 tok/s** on a 1024-token reply. `speed.py`'s 512-token replies: prose **37.8**,
+The 0.6.2 row is the second of three passes, all agreeing: 35.0 / 57.2 / 73.2, then 35.2 / 57.5 / 73.6, and a
+first pass whose **two-client point read 19.5 tok/s** and is published here rather than dropped. That pass was
+polluted: the serve log (0.6.2 prints a line a request) shows a **71,004-token, `finish=tool_calls` request
+whose prefill took 55.09 s** interleaved between the one- and two-client runs, followed by three more turns on a
+~72k context — the host's own `hermes-agent` container, whose local model provider is this same `:8083`
+endpoint, holding a conversation while the bench ran. The 2-client point sits between two of those, which is
+what the 9.8 / 10.4 tok/s per client is. **Nothing else on the box talks to `:8083`, and a bench here has to
+check that it does not**: the per-request lines name the prompt size, the finish and the rate, and are how this
+was found.
+
+- **Load:** 210.6 s on the revision's first start (kernel extensions compiled for it: `warmed in 98.2s`),
+  **115.3 s** warm — the same 115.3 s the 0.6.1 arm measured, so the rebase costs nothing to start.
+- **Prefill:** a 2315-token prompt in 1.54 s, with `cached_tokens=2314` — this rig's prompts repeat, so that is
+  a cached prefill, not a cold one. A cold 15,460-token prompt measured 1666 tok/s on 0.5.0.
+- **Decode, one client:** **35.0 tok/s** on a 1024-token reply. `speed.py`'s 512-token replies: prose **37.8**,
   code **49.0** tok/s (`speed.py` reports `TTFT None` on this profile: with `--thinking` the stream's deltas are
   `reasoning_content`, and the script times `delta.content`).
-- **Aggregate, N clients:** 1 → **34.8**, 2 → **57.1**, 3 → **73.0 tok/s** (2.10x one client), lanes within
-  ~40% of each other (24.3 / 28.4 / 33.6 at three).
-- **Vision, end to end** (`bench/vision_probe.py`, which generates what it asks about and takes the colour as
-  an argument, so the answer has to come from the pixels): a 512x512 solid image answered `Rouge` in **2.40 s**
-  (red) and `Bleu` in **1.27 s** (blue); a 2 s clip, 4 fps, answered `Rouge` in **2.19 s** and `Bleu` in
-  **2.83 s**, its reasoning reading the frame timestamps back ("the frames show a solid red color across all
-  frames (0.0s, 1.0s, 2.0s)") — the video path's first measurement on this rig; a 2048x2048 image (4M pixels,
-  4172 prompt tokens) answered `Rouge` in **7.32 s**. Draft acceptance on the smoke run: 76 of 117 drafts
-  (65%).
+- **Aggregate, N clients:** 1 → **35.0**, 2 → **57.2**, 3 → **73.2 tok/s** (2.09x one client), lanes within
+  ~40% of each other (24.4 / 28.5 / 33.7 at three).
+- **Vision, end to end** (`bench/vision_probe.py`, which generates what it asks about and takes the colour as an
+  argument, so the answer has to come from the pixels): a 512x512 solid image answered `Rouge` in **2.50 s**
+  (red) and `Bleu` in **1.28 s** (blue); a 2 s clip answered `Rouge` in **2.26 s**; a 2048x2048 image (4M
+  pixels, 4172 prompt tokens) answered `Rouge` in **7.32 s** on 0.6.1. Draft acceptance over the whole suite:
+  **7,074 of 10,745 drafts (65.8%)**, against 5,973 of 9,251 (64.6%) on the 0.6.1 arm.
 
-**Against the previous pin, same box, same bench, same session** — `swift-tensorfold:060`
-(`integration/0.6.0`, `c3fa14f`) against `swift-tensorfold:local` (`integration/0.6.1`, `808767f`), both loaded
-from the same `.env`: **35.0 / 57.4 / 72.9** against **34.8 / 57.1 / 73.0 tok/s** at one, two and three
-clients. The rebase is free at this bench's resolution, and 0.6.0's own load took 206.9 s against 0.6.1's
-214.3 s. The 0.5.0-era figure of **111.6 tok/s** at three lanes quoted below was taken with a different bench
-(longer replies, a different prompt set): it is not comparable to the numbers above, and these two arms are
-what says the rebase did not cost speed.
+**Against the previous pin, same box, same bench, same session** — `swift-tensorfold:061`
+(`integration/0.6.1`, `808767f`, image `fa5ff1616f41`) against `swift-tensorfold:local` (`integration/0.6.2`,
+`d26e09f`, image `b3677c5c500b`), both loaded from the same `.env`: **34.9 / 57.2 / 72.9** against
+**35.0 / 57.2 / 73.2 tok/s** at one, two and three clients, `speed.py` within 0.04 s a workload and the vision
+probes within 0.04 s a case. The rebase is free at this bench's resolution. The 0.5.0-era figure of **111.6
+tok/s** at three lanes quoted below was taken with a different bench (longer replies, a different prompt set):
+it is not comparable to the numbers above, and these two arms are what says the rebase did not cost speed.
 
 ### The 0.5.0 readings this rig still quotes
 
 TensorFold **0.5.0** with the three changes that are now the pinned branch's first commits, `--thinking`,
 three lanes at the full 262144 window, int8 KV, `--mtp-confidence 0.60`, 8-bit faces on every layer. These
 figures predate 0.6.0 and were not re-taken on it: the rebase replays these paths unchanged, but 0.6.1 brings
-54 upstream commits over 0.6.0's tip, so read them as the earlier revision's.
+54 upstream commits over 0.6.0's tip and 0.6.2 brings 12 more over that, so read them as the earlier revision's.
 
 - **Long-prompt context (15,460 prompt tokens):** TTFT **9.28 s**, prefill **1666 tok/s**, decode **51.5 tok/s**
 on a short reply.
@@ -256,6 +270,26 @@ The full history — the 0.3.6.3 baseline tables, the draft-window and 8-bit-fac
 figures — is in [docs/engine-status.md](docs/engine-status.md).
 
 ## Measuring speed
+
+`scripts/bench-suite.sh <arm>` is the whole instrument, and the way a pin is measured here: it serves nothing
+(point it at a running server), runs a **discard pass** first — the first pass after a load is cold, and this
+rig's figures were learned by throwing one away — then `bench/aggregate.py` at 1, 2 and 3 clients,
+`bench/speed.py` and `bench/vision_probe.py`, and writes every line to `bench/<arm>.log` along with the id of
+the image **actually serving** (`docker inspect`: two revisions of one engine print the same startup lines, so
+the tag is not evidence) and the server's own counters. Both arms of a comparison get the same suite, from the
+same `.env`, served fresh back to back:
+
+```bash
+IMAGE=swift-tensorfold:061 scripts/serve.sh && scripts/bench-suite.sh before-061
+docker rm -f swift-tensorfold
+IMAGE=swift-tensorfold:local scripts/serve.sh && scripts/bench-suite.sh after-062
+```
+
+**Check who else is on the endpoint before believing a number.** The host's own `hermes-agent` container points
+its local model provider at this same `:8083`, and a 71k-token agent turn landing inside a two-client run took
+that point from 57 to 19.5 tok/s. The serve log is what shows it — 0.6.2 prints a line a request, with the
+prompt size, the finish and the rate, where 0.6.1 leaves the `/health` counters. Repeat a point that disagrees
+instead of publishing it or dropping it.
 
 `scripts/bench.sh` (options: `TOKENS=256 scripts/bench.sh`, `EXTRA_BENCH_ARGS="--rounds 3 --json bench/last.json"`)
 drives three workloads through the client's own clock:

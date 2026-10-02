@@ -220,6 +220,36 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
   export ([#179](https://github.com/ashhart/TensorFold/pull/179)) — this checkpoint's n-gram table is BF16, so
   nothing changes for it, but a MIXED_PRECISION sibling of it was refused outright on 0.6.1 — and
   `--mtp-confidence` now defaults to **0.70** upstream where this rig pins **0.60** explicitly.
+  - **Deployed on the Spark, and the whole tree checked against upstream's.** `scripts/build.sh` built the pinned
+    image (`tensorfold 0.6.2`, the video and 8/12-bit symbols import, the draft vocabulary is 80,014 ids) and it
+    was then *served* and measured, not only built — see the A/B below. Every one of the **336** test files of the
+    pinned tree was run on its own (a fresh pytest per file, a 120 s timeout each, four at a time, `CUDA_VISIBLE_DEVICES` empty) against a clean `upstream/main` checkout of 0.6.2
+    (**332** files; the four extra names are this branch's own): **the failure sets are identical** — the same 155
+    files all-skipped (that container has no GPU and no `mlx`), the same failing files, the same two collection
+    errors (`test_alternating_kv.py`, `test_dflash_tree_search.py`) and `test_cancellation.py` hitting the 120 s
+    timeout on both trees. Exactly one file present on both sides differs: `tests/cuda/test_flashnext_nvfp4_kernels.py`,
+    **14 skipped against 10**, which is the 8/12-bit helper coverage the branch adds.
+    Of the branch's four own files three pass, and `tests/test_vision_video.py` reports 1 failed of 20 — its
+    "video inputs require PyAV" assertion fails *because the image installs PyAV*, so the loader reaches its
+    invalid-bytes path instead. That file and `vision/videos.py` are byte-identical on 0.6.1, where the same test
+    fails the same way: it predates this rebase and is this branch's own defect, not the new base's. (The counts
+    here are `test_*.py` files; the 0.6.1 sweep's "343" counted every `.py` under `tests/`, which is why the two
+    runs do not read alike — `integration/0.6.1` carries 329 test files, 0.6.2's upstream 332, this branch 336.)
+  - **No speed cost, measured rather than argued.** Both pins served fresh on the same box, from the same `.env`,
+    back to back, one `scripts/bench-suite.sh` run per arm, with the id of the image *actually serving* taken from
+    the container: `swift-tensorfold:061` (`integration/0.6.1`, `808767f`, image `fa5ff1616f41`)
+    **34.9 / 57.2 / 72.9** tok/s at one, two and three clients against `swift-tensorfold:local`
+    (`integration/0.6.2`, `d26e09f`, image `b3677c5c500b`) **35.0 / 57.2 / 73.2** — `speed.py` within 0.04 s a
+    workload, the vision probes within 0.04 s a case, warm load 115.3 s on both. Two further passes of the 0.6.2
+    arm read 35.0 / 57.2 / 73.2 and 35.2 / 57.5 / 73.6. The 0.6.2 arm's *first* start after the rebase took
+    210.6 s: it recompiled the revision's kernel extensions (`prompt kernels warmed in 98.2s`); every start since
+    is 115.3 s, the same as 0.6.1's. One point is published rather than dropped, a first pass whose two-client
+    reading was **19.5 tok/s**: it ran while the host's `hermes-agent` container — whose local model provider is
+    this same `:8083` endpoint — was taking a turn, and the serve log shows a **71,004-token `finish=tool_calls`
+    request prefilling for 55.09 s** between the one- and the two-client runs, then three more turns on a ~72k
+    context. 0.6.2 is what makes that visible, since it prints a line a request where 0.6.1 leaves the `/health`
+    counters; a bench here has to check that nothing else is on the endpoint, and a point that disagrees gets
+    repeated, not published or quietly rerun.
 - **The 0.6.1 rebase.** 54 commits and 200 files (+11,886/−598) over 0.6.0's tip. In, out and what it costs:
   - **Upstream 0.6.1 serves images on `qwen4_exp`.** The image port this rig had carried since 0.6.0 is the
     same MiaAI-Lab patch (`EncodedVision`, `vision_config`, `image_positions` byte-identical; upstream's own
