@@ -196,11 +196,13 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
 ## Checkpoint and engine detail (moved out of the README)
 
 - Engine pinned by the `Dockerfile` as `ARG TF_REF`:
-  `d26e09fbd723f73dba84b6c6c4c2b0816ce98c10`, `tournierjc/TensorFold@integration/0.6.2` — upstream
-  `ashhart/TensorFold@56e2e3e` (0.6.2) plus the rig's own changes, one commit each: the 8-bit projection
-  copies, video input on the vision frontend, the 80,014-id draft vocabulary, the PLE row prefetch and the
-  12-bit decode faces. The README's "Engine revision and the branches" lists every branch and its head.
-  History: `integration/0.6.1` (`808767fd`, upstream 0.6.1 `17c73e1`) before it, and before that
+  `f5de97f917b51735dec57459daad8bd736642cb9`, `tournierjc/TensorFold@integration/0.6.3` — upstream
+  `ashhart/TensorFold@9356df5` (0.6.3) plus the rig's own changes, one commit each: the 8-bit projection
+  copies and the 80,014-id draft vocabulary. Upstream 0.6.3 merged the vision port whole, so video left the
+  branch; the PLE row prefetch and the 12-bit decode faces are deliberately not carried (the 12-bit branch is
+  kept for future work). The README's "Engine revision and the branches" lists every branch and its head.
+  History: `integration/0.6.2` (`d26e09f`, upstream 0.6.2 `56e2e3e`) before it,
+  `integration/0.6.1` (`808767fd`, upstream 0.6.1 `17c73e1`) before that, and before that
   the rig served `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3,
   upstream PR [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) merged as 0.3.6.3) and
   before that the 0.3.6.2 `nvfp4-flash-next` branch, then 0.5.0 with three PRs on top, then 0.6.0
@@ -239,7 +241,9 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
     back to back, one `scripts/bench-suite.sh` run per arm, with the id of the image *actually serving* taken from
     the container: `swift-tensorfold:061` (`integration/0.6.1`, `808767f`, image `fa5ff1616f41`)
     **34.9 / 57.2 / 72.9** tok/s at one, two and three clients against `swift-tensorfold:local`
-    (`integration/0.6.2`, `d26e09f`, image `b3677c5c500b`) **35.0 / 57.2 / 73.2** — `speed.py` within 0.04 s a
+    (`integration/0.6.2`, `d26e09f`, image `b3677c5c500b`) **35.0 / 57.2 / 73.2**, and the 0.6.3 rebase
+    (`integration/0.6.3`, `f5de97f`, image `43be03b19d69`) **34.9 / 57.3 / 73.2** on its second pass
+    (**32.9 / 55.4 / 70.6** on its first, this rig's usual run-to-run spread) — `speed.py` within 0.04 s a
     workload, the vision probes within 0.04 s a case, warm load 115.3 s on both. Two further passes of the 0.6.2
     arm read 35.0 / 57.2 / 73.2 and 35.2 / 57.5 / 73.6. The 0.6.2 arm's *first* start after the rebase took
     210.6 s: it recompiled the revision's kernel extensions (`prompt kernels warmed in 98.2s`); every start since

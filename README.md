@@ -1,17 +1,18 @@
 # Swift 1.5 on TensorFold — one DGX Spark
 
 A test rig that serves the Swift 1.5 NVFP4 checkpoint on a single DGX Spark (GB10, 128 GB unified memory)
-with [TensorFold](https://github.com/ashhart/TensorFold) 0.6.2: FP4 routed experts, BF16 everywhere else, and
+with [TensorFold](https://github.com/ashhart/TensorFold) 0.6.3: FP4 routed experts, BF16 everywhere else, and
 the PLE layer's n-gram table in the BF16 layout this revision publishes.
 
 The sibling rig [`Qwen3.8-Flash-Next-Single-DGX-Spark`](https://github.com/tournierjc/Qwen3.8-Flash-Next-Single-DGX-Spark)
 serves the same model family with a patched vLLM; this one runs the TensorFold CUDA route end to end on the
 Spark. The image carries the vision path: `transformers==5.17.0`, `av`, Pillow and the `qwen4_exp` frontend.
-Upstream serves **images** on this family since 0.6.1 — the same MiaAI-Lab port this rig had carried since 0.6.0,
-unchanged in 0.6.2 — so what the branch adds there is **video**: a clip is sampled at 2 fps, bounded to 256
-frames, and its frame groups ride the image path as extra placeholder blocks. Vision is dormant unless `--vision`
-is passed, and it needs at least two lanes. Verified end to end: a solid red square and a solid blue square
-answered "Rouge" (2.7 s) and "Bleu" (2.9 s).
+Upstream serves **images** on this family since 0.6.1 and **video** since 0.6.3, so the whole vision port this
+rig had carried since 0.6.0 is upstream and the rig's `feat/vision-video` branch is superseded: a clip is sampled
+at 2 fps, bounded to 256 frames, and its frame groups ride the image path as extra placeholder blocks. Vision is
+dormant unless `--vision` is passed, and it needs at least two lanes. Verified end to end on the pinned 0.6.3
+revision: a solid red square and a solid blue square answered "Rouge" (2.6 s) and "Bleu" (1.3 s), and a solid red
+clip answered "Rouge" (2.4 s) — video rides upstream's own path now.
 
 ## What it runs
 
@@ -50,10 +51,10 @@ scripts/smoke.sh                     # in another shell: health, /v1/models, one
 scripts/bench.sh                     # in another shell: prose, code and prefill speed
 ```
 
-The engine the image serves is the fork's `integration/0.6.2` branch, and that is the `Dockerfile`'s own
-default (`TF_REPO`/`TF_REF`) — upstream 0.6.2 plus the rig's five changes, none of which upstream carries. Build
-it with no arguments. To test another revision, pass both: `TF_REPO` alone is not enough, since without `TF_REF`
-the build resolves the fork's `main` (upstream 0.6.2: no video, no 8-bit faces, and the unreduced 79,591-id draft
+The engine the image serves is the fork's `integration/0.6.3` branch, and that is the `Dockerfile`'s own
+default (`TF_REPO`/`TF_REF`) — upstream 0.6.3 plus the rig's two changes, neither of which upstream carries.
+Build it with no arguments. To test another revision, pass both: `TF_REPO` alone is not enough, since without
+`TF_REF` the build resolves the fork's `main` (upstream 0.6.3: no 8-bit faces, and the unreduced 79,591-id draft
 vocabulary) and fails its own build assertions.
 
 ```bash
@@ -73,9 +74,9 @@ or the `TENSORFOLD_VISION_WORKSPACE_MIB` reserve that a `--vision` serve counts 
 receipt as the non-vision plan. It also cannot run while a serve holds the memory (the second load is refused
 outright: `estimated largest fitting prompt-plus-reply window: 0 tokens`).
 
-The 0.6.2 serve reports these lines, and the whole load took **210.6 s** on its first start -- the new
-revision's kernel extensions were being compiled (`prompt kernels warmed in 98.2s`) -- and **115.3 s** with the
-kernel caches under `STATE_DIR` warm, which is also what the 0.6.1 arm measured in the same session:
+The 0.6.3 serve reports these lines, and the whole load took **208.5 s** on its first start -- the revision's
+kernel extensions were being compiled (`prompt kernels warmed in 99.8s`) -- with warm starts reusing those caches
+(**115.3 s** on 0.6.2, the arm that was restarted warm; 0.6.1 measured the same in its own session):
 
     startup estimate 98.31 GiB within 104.95 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
     the 95.4 GiB of mapped tables do not fit beside the weights and caches: lookups will page them from disk, which slows prompts (free memory to keep them resident)
@@ -125,7 +126,7 @@ The flags this rig runs, `PARALLEL`, `CONTEXT` and `EXTRA_ARGS` in `.env` plus t
   engine refuses image input below two lanes (it shares a round's reads, see above). It takes inline base64
   media; public HTTP(S) URLs need `--vision-urls` on top, which is deliberately not set. The tower costs
   0.84 GiB and reserves 1.25 GiB of workspace (`TENSORFOLD_VISION_WORKSPACE_MIB`; the engine's own default is
-  4096 through 0.6.2, three times this rig's measured peak). A clip is decoded with PyAV, sampled at 2 fps up to
+  4096 through 0.6.3, three times this rig's measured peak). A clip is decoded with PyAV, sampled at 2 fps up to
   256 frames, resized into the tower's grid, and sent as one timestamped placeholder block per frame group — the
   model reads the timestamps (`verified: a 2 s all-red clip answered "the frames show a solid red color across
   all frames (0.0s, 1.0s, 2.0s)"` in 1.65 s). Upstream has no video (0.6.1 and 0.6.2 alike): this half of the
@@ -166,6 +167,24 @@ curl -fsS http://127.0.0.1:8083/v1/chat/completions \
 ```
 
 ## Status of the engine under test
+
+### Measured on the pinned 0.6.3 revision
+
+The rig was rebuilt on `integration/0.6.3` (`f5de97f`, image `43be03b19d69`) and redeployed with the same
+`.env`, then run through `scripts/bench-suite.sh` twice, because a single pass is not a measurement. The
+baseline is the 0.6.2 pass recorded below (35.0 / 57.2 / 73.2 aggregate), and the two 0.6.3 passes bracket it:
+
+| Arm | Image | Load | 1 client | 2 clients | 3 clients |
+| --- | --- | --- | --- | --- | --- |
+| `integration/0.6.2` (`d26e09f`) | `b3677c5c500b` | 210.6 s | 35.0 tok/s | 57.2 tok/s | 73.2 tok/s |
+| `integration/0.6.3` (`f5de97f`) pass A | `43be03b19d69` | 208.5 s | 32.9 tok/s | 55.4 tok/s | 70.6 tok/s |
+| `integration/0.6.3` (`f5de97f`) pass B | `43be03b19d69` | 208.5 s | 34.9 tok/s | 57.3 tok/s | 73.2 tok/s |
+
+Pass B agrees with the 0.6.2 baseline to 0.3%, and pass A is 3-6% under it: that spread is the run-to-run
+variation this rig has always shown on the aggregate (the 0.6.2 pass recorded below had a polluted 2-client
+reading of 19.5 tok/s against its own 57.2). **0.6.3 costs nothing measurable here** — the client-side speed is
+unchanged too (prose 13.58 s against 13.55, code 10.40 against 10.48, prefill 1.53 against 1.54), and vision
+passed on both: red image "Rouge", red clip "Rouge", blue image "Bleu".
 
 ### Measured on the pinned 0.6.2 revision
 
@@ -419,10 +438,13 @@ pytest.ini              default test collection: this rig's tests/, not the engi
 ```
 
 Weights, caches and logs stay on the host; the image holds the engine only. `scripts/build.sh` prints the
-installed `tensorfold --version` and imports the symbols that exist only on the pinned branch — video input
-(`tensorfold.vision.videos`), the 8- and 12-bit face helpers (`bf16.py`) and the Flash Next CUDA vision frontend
-— so a silently wrong build fails at build time. (`nvfp4`/`nvfp4_moe` were the old check and proved nothing:
-upstream ships both, in 0.6.1 and 0.6.2 alike.)
+installed `tensorfold --version`, imports the one symbol that still exists only on the pinned branch — the 8-bit
+face helper (`bf16.faces_8bit`) — and the `Dockerfile` asserts the pinned draft vocabulary by data, 80,014 ids.
+Those two are the whole proof: video input (`tensorfold.vision.videos`) and the Flash Next CUDA vision frontend
+are imported as smoke checks, but upstream 0.6.3 ships both, so they no longer say anything about the ref that
+was built. The 12-bit faces are checked nowhere, because they are deliberately not in the pinned revision.
+(`nvfp4`/`nvfp4_moe` were the original check and proved nothing: upstream ships both, in 0.6.1 and 0.6.2
+alike.)
 
 ## Engine revision and the branches
 
@@ -462,23 +484,32 @@ but a MIXED_PRECISION sibling of it was refused outright on 0.6.1. And `--mtp-co
 
 | Branch in `tournierjc/TensorFold` | Head | What it carries |
 | --- | --- | --- |
-| **`integration/0.6.2`** | `d26e09fbd723f73dba84b6c6c4c2b0816ce98c10` | **the pinned revision**: 0.6.2 + the 8-bit copies + video input + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
+| **`integration/0.6.3`** | `f5de97f917b51735dec57459daad8bd736642cb9` | **the pinned revision**: 0.6.3 + the 8-bit projection copies + the 80,014-id draft vocabulary. Upstream 0.6.3 merged the vision port whole, so video is no longer a branch commit; the PLE row prefetch and the 12-bit faces are deliberately not carried here (the 12-bit branch is kept for future work, see below) |
+| `integration/0.6.2` | `d26e09fbd723f73dba84b6c6c4c2b0816ce98c10` | the previously pinned revision: 0.6.2 + the 8-bit copies + video input + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
 | `integration/0.6.1` | `808767fd479c6bd8dbb2eb68f2a3537f75e6d520` | the previously pinned revision, on 0.6.1's base: what the rig measured before this rebase |
-| `feat/vision-video` | `3056063e3b05899d2e8b84769bedac19832efed7` | video input alone, on 0.6.1 (`--vision`; the image half is upstream now) |
+| `feat/vision-video` | `3056063e3b05899d2e8b84769bedac19832efed7` | video input alone, on 0.6.1 — **superseded**: upstream 0.6.3 merged video (`588921b`), and the rig's only remaining delta was a stale 64 MiB clip cap against upstream's deliberate 16 MiB one |
 | `integration/0.6.0` | `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6` | the 0.6.0 rebase, two rebases back |
-| `feat/vision-qwen4-exp` | `286eaca99aecc79813b69182b29d40d060b3cb5c` | the whole vision port (images and video) on 0.6.0's base; its image half is upstream since 0.6.1, superseded by `feat/vision-video` |
-| `feat/mtp-draft-vocab` | `153bf32ae56c8017acaf75f9fff3a801e8e6f002` | the 80,014-id MTP draft vocabulary (0.6.0 base) |
-| `cursor/ple-row-prefetch-0ff8` | `c2c392ba467fa3d4a579fb58f5b806783d6a442d` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts (0.6.0 base) |
-| `cursor/lossless-12bit-faces-0ff8` | `3864881c3508c02a0093d8724d4256facd2692ac` | the 12-bit shared-exponent decode faces — lossless, `TENSORFOLD_FACES_12BIT`, dormant unless set (0.6.0 base) |
+| `feat/vision-qwen4-exp` | `eda6477` | the 8-bit projection copies alone, rebased onto 0.6.3 (the branch used to carry the whole vision port; images went upstream in 0.6.1, video in 0.6.3) |
+| `feat/mtp-draft-vocab` | `65aaf68` | the 80,014-id MTP draft vocabulary, rebased onto 0.6.3 (upstream still ships the unreduced 79,591-id list) |
+| `cursor/ple-row-prefetch-0ff8` | `497ca8d` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts — rebased onto 0.6.3, **not** integrated (measured no value) |
+| `cursor/lossless-12bit-faces-0ff8` | `32ecbe5` | the 12-bit shared-exponent decode faces — lossless, bit-exact, 0.83x the stored bytes — rebased onto 0.6.3 and **kept for future improvements, not integrated**. A lossless *8-bit* face is impossible: sign+mantissa is already 8 bits, and measured over four real faces 0.00% of 32-deep K-groups share one exponent, so an 8-bit shared-exponent face escapes 100% of groups and costs more than the raw BF16 |
 | `pr/host-table-rows-by-file` | `79aa2a06c7ca52ade88a479f33149fcda55906ae` | a round's few n-gram rows read by file over the pool, not one after another (#103, closed unmerged) |
-| `main` | `56e2e3ec55bc0ae1d7d5158c4fa2c79a3567ab21` | upstream 0.6.2, realigned |
+| `main` | `9356df5c424b0c36b7737e37873a6f968b08de79` | upstream 0.6.3, realigned |
 | `cursor/lossless-12bit-faces-1ba6` | `410d2ffad389f5248cb5ac652714eb749823fc7a` | the same 12-bit prototype under an older spelling (`kind=` where `-0ff8` uses `face=`), on the pre-0.6.0 base: kept for the record, superseded |
 
-`integration/0.6.2` is what the rig serves, one commit per change on top of 0.6.2 — the same five commits, rebased
-onto the new release; the branches above are the
-same changes in reviewable units. The four per-unit branches still sit on 0.6.0's base — replaying them is what
-the integration branch already did, and they are kept as the record of each unit rather than rebuilt for its own
-sake. What belongs to this rig rather than to the engine stays here: the builder that produced the vocabulary
+The rebase onto **upstream 0.6.3** (`9356df5`, 81 commits and 163 files over 0.6.2) changed what the branch
+carries rather than how it carries it. Upstream merged the vision port whole — `588921b feat(vision cuda): Flash
+Next takes video input`, plus the visual-token budget and the tower offload — so **video left the branch**: the
+video commit was dropped in the replay, and `feat/vision-video` is superseded. Two changes stay, both still
+absent from 0.6.3 by symbol: the 8-bit faces (`TENSORFOLD_FACES_FP8` / `faces_8bit`) and the reduced
+`draft_vocab.txt` (80,014 ids against upstream's 79,591). Two do not: the **PLE row prefetch** and the **12-bit
+decode faces** are not integrated here. Both still rebase cleanly onto 0.6.3 and both branches are kept (the
+12-bit one for future work), but neither earns its keep on this rig — the 12-bit face is lossless yet reads
+0.83x the stored bytes against the e4m3 copy's 0.52x, and there is no lossless 8-bit to replace that copy with
+(the measurement is in the branch table above).
+
+`integration/0.6.3` is what the rig serves, one commit per change on top of 0.6.3; the branches above are the
+same changes in reviewable units, all rebased onto the same release rather than left on 0.6.0's base. What belongs to this rig rather than to the engine stays here: the builder that produced the vocabulary
 (`scripts/build_draft_vocab.py`), the checks that hold it to its invariants (`tests/test_draft_vocab.py`,
 `pytest.ini`), and the sections above.
 

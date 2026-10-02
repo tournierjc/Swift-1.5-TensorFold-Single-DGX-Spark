@@ -14,7 +14,7 @@ FROM nvcr.io/nvidia/pytorch:26.07-py3
 # and the branches" section of the README lists what each one carries). Override to test another one:
 #   TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
 ARG TF_REPO=https://github.com/tournierjc/TensorFold.git
-ARG TF_REF=d26e09fbd723f73dba84b6c6c4c2b0816ce98c10
+ARG TF_REF=f5de97f917b51735dec57459daad8bd736642cb9
 
 LABEL org.opencontainers.image.title="Swift 1.5 on TensorFold (single DGX Spark)" \
       org.opencontainers.image.source="https://github.com/tournierjc/Swift-1.5-TensorFold-Single-DGX-Spark" \
@@ -44,17 +44,17 @@ RUN python3 -m pip install --no-cache-dir "tensorfold @ git+${TF_REPO}@${TF_REF}
     && mkdir -p /hf /state /models
 
 # The engine revision carries every change this rig serves (the README's "Engine revision and the branches"
-# section names them). The build asserts the three that are silent when missing. A module upstream also ships
-# (nvfp4, nvfp4_moe) says nothing about the ref that was built, so the checks are the branch's own symbols and its
-# own data: video input (`tensorfold.vision.videos`; upstream 0.6.2 serves images only), the 8- and 12-bit face
-# helpers (`bf16.py`, upstream carries neither), the Flash Next CUDA vision frontend, and the MTP draft head's
-# reduced vocabulary, `families/qwen4_exp/cuda/draft_vocab.txt`, 80,014 ids -- the pinned revision's own list,
-# which is what `scripts/build_draft_vocab.py` produced. A build against a ref that does not carry them
-# (upstream, or an older tag) fails here in seconds instead of scoring 79,591 ids at run time -- the failure mode
-# that cost the sibling recipe ~17%, and the reason this check is a build step and not a flag.
-RUN python3 -c "from tensorfold.vision.videos import load_videos; print('[build] video input present')" \
-    && python3 -c "from tensorfold.families.qwen4_exp.cuda.bf16 import faces_8bit, faces_12bit; print('[build] 8/12-bit face helpers present')" \
-    && python3 -c "from tensorfold.vision.qwen_cuda import QwenCudaVision; print('[build] Flash Next CUDA vision frontend present')"
+# section names them). Two of them are silent when missing and are asserted here, one by symbol and one by data:
+# the 8-bit dense faces (`bf16.faces_8bit`; upstream carries no such face) and the MTP draft head's reduced
+# vocabulary, `families/qwen4_exp/cuda/draft_vocab.txt`, 80,014 ids -- the pinned revision's own list, which is
+# what `scripts/build_draft_vocab.py` produced. A build against a ref that does not carry them (upstream, or an
+# older tag) fails here in seconds instead of scoring 79,591 ids at run time -- the failure mode that cost the
+# sibling recipe ~17%, and the reason the vocabulary check is a build step and not a flag. The other two imports
+# below are smoke checks only: video input (`tensorfold.vision.videos`) and the Flash Next CUDA vision frontend
+# land upstream in 0.6.3, so importing them no longer says anything about which ref was built. The 12-bit faces
+# are not asserted: they are kept on `cursor/lossless-12bit-faces-0ff8` and deliberately not in this revision.
+RUN python3 -c "from tensorfold.families.qwen4_exp.cuda.bf16 import faces_8bit; print('[build] 8-bit face helper present')" \
+    && python3 -c "from tensorfold.vision.videos import load_videos; from tensorfold.vision.qwen_cuda import QwenCudaVision; print('[build] video input and Flash Next CUDA vision frontend present')"
 
 RUN pkg="$(python3 -c 'import tensorfold, os; print(os.path.dirname(tensorfold.__file__))')" \
     && PKG="${pkg}" python3 -c "import os, pathlib; p = pathlib.Path(os.environ['PKG'], 'families/qwen4_exp/cuda/draft_vocab.txt'); ids = [int(x) for x in p.read_text().split()]; assert ids and ids == sorted(set(ids)), p; assert len(ids) == 80014, f'{p}: {len(ids)} ids, the port carries 80014'; print('[build] draft vocabulary:', len(ids), 'ids')"
