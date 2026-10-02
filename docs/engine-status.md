@@ -196,14 +196,30 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
 ## Checkpoint and engine detail (moved out of the README)
 
 - Engine pinned by the `Dockerfile` as `ARG TF_REF`:
-  `808767fd479c6bd8dbb2eb68f2a3537f75e6d520`, `tournierjc/TensorFold@integration/0.6.1` — upstream
-  `ashhart/TensorFold@17c73e1` (0.6.1) plus the rig's own changes, one commit each: the 8-bit projection
+  `d26e09fbd723f73dba84b6c6c4c2b0816ce98c10`, `tournierjc/TensorFold@integration/0.6.2` — upstream
+  `ashhart/TensorFold@56e2e3e` (0.6.2) plus the rig's own changes, one commit each: the 8-bit projection
   copies, video input on the vision frontend, the 80,014-id draft vocabulary, the PLE row prefetch and the
   12-bit decode faces. The README's "Engine revision and the branches" lists every branch and its head.
-  History: the rig served `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3,
+  History: `integration/0.6.1` (`808767fd`, upstream 0.6.1 `17c73e1`) before it, and before that
+  the rig served `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3,
   upstream PR [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) merged as 0.3.6.3) and
   before that the 0.3.6.2 `nvfp4-flash-next` branch, then 0.5.0 with three PRs on top, then 0.6.0
   (`c3fa14f4`, `integration/0.6.0`) — the speed tables below were taken on 0.5.0, not on 0.6.x.
+- **The 0.6.2 rebase.** 12 commits and 50 files (+1,487/−367) over 0.6.1's tip. The five branch commits replayed
+  with **no conflict at all**, and their own diffstat is identical to the one they had on 0.6.1 (23 files,
+  +1,912/−91): this rebase changes no line of the branch's work, which is exactly why the deployed A/B, not the
+  rebase log, is what says whether the new base costs anything. What upstream changed is elsewhere: Flash Next at
+  64k-128k *on Macs*, the 27B's GDN tree kernel and DFlash2 drafter launch on CUDA, the GLM-5.3 checkpoint credit
+  and its mixed-bit EXL3 refusal, and the CUDA server's own fixes (`cuda/http.py`, `cuda/server.py`,
+  `engine/prefix_snapshots.py`, `server/cancellation.py`, `server/scheduler.py`) — the branch's files
+  (`families/qwen4_exp/cuda/*`, `vision/*`, `host_table.py`, `server/messages.py`, `server/prompts.py`) are not
+  among them. Checked before the rebase, by symbol rather than by subject: **none of the five is upstream in
+  0.6.2** — `TENSORFOLD_FACES_FP8`, `TENSORFOLD_FACES_12BIT`, `TENSORFOLD_PLE_PREFETCH`, `vision/videos.py` and
+  `families/qwen4_exp/cuda/draft_vocab.txt` are all still absent there. Two release entries do touch this rig's
+  configuration: the config check now accepts an **FP8 n-gram table** in NVIDIA's MIXED_PRECISION Flash Next
+  export ([#179](https://github.com/ashhart/TensorFold/pull/179)) — this checkpoint's n-gram table is BF16, so
+  nothing changes for it, but a MIXED_PRECISION sibling of it was refused outright on 0.6.1 — and
+  `--mtp-confidence` now defaults to **0.70** upstream where this rig pins **0.60** explicitly.
 - **The 0.6.1 rebase.** 54 commits and 200 files (+11,886/−598) over 0.6.0's tip. In, out and what it costs:
   - **Upstream 0.6.1 serves images on `qwen4_exp`.** The image port this rig had carried since 0.6.0 is the
     same MiaAI-Lab patch (`EncodedVision`, `vision_config`, `image_positions` byte-identical; upstream's own

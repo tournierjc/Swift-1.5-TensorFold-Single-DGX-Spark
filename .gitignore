@@ -5,3 +5,6 @@ bench/last.json
 __pycache__/
 hf/
 state/
+# The engine checkouts this host keeps for tests/test_draft_vocab.py (dev/repo, dev/port, dev/pinned): working
+# copies of another repository, never committed here.
+/dev/

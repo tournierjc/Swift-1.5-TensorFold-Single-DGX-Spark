@@ -9,12 +9,12 @@
 
 FROM nvcr.io/nvidia/pytorch:26.07-py3
 
-# The revision under test. Pinned to the commit this repository was prepared against -- upstream 0.6.1 plus the
-# rig's own changes, which live in `integration/0.6.1` of the fork `tournierjc/TensorFold` (the "Engine revision
+# The revision under test. Pinned to the commit this repository was prepared against -- upstream 0.6.2 plus the
+# rig's own changes, which live in `integration/0.6.2` of the fork `tournierjc/TensorFold` (the "Engine revision
 # and the branches" section of the README lists what each one carries). Override to test another one:
 #   TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
 ARG TF_REPO=https://github.com/tournierjc/TensorFold.git
-ARG TF_REF=808767fd479c6bd8dbb2eb68f2a3537f75e6d520
+ARG TF_REF=d26e09fbd723f73dba84b6c6c4c2b0816ce98c10
 
 LABEL org.opencontainers.image.title="Swift 1.5 on TensorFold (single DGX Spark)" \
       org.opencontainers.image.source="https://github.com/tournierjc/Swift-1.5-TensorFold-Single-DGX-Spark" \
@@ -46,7 +46,7 @@ RUN python3 -m pip install --no-cache-dir "tensorfold @ git+${TF_REPO}@${TF_REF}
 # The engine revision carries every change this rig serves (the README's "Engine revision and the branches"
 # section names them). The build asserts the three that are silent when missing. A module upstream also ships
 # (nvfp4, nvfp4_moe) says nothing about the ref that was built, so the checks are the branch's own symbols and its
-# own data: video input (`tensorfold.vision.videos`; upstream 0.6.1 serves images only), the 8- and 12-bit face
+# own data: video input (`tensorfold.vision.videos`; upstream 0.6.2 serves images only), the 8- and 12-bit face
 # helpers (`bf16.py`, upstream carries neither), the Flash Next CUDA vision frontend, and the MTP draft head's
 # reduced vocabulary, `families/qwen4_exp/cuda/draft_vocab.txt`, 80,014 ids -- the pinned revision's own list,
 # which is what `scripts/build_draft_vocab.py` produced. A build against a ref that does not carry them

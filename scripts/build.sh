@@ -25,8 +25,8 @@ docker build "${args[@]}" -t "${IMAGE}" .
 
 echo "[build] installed package:"
 docker run --rm "${IMAGE}" --version
-# The symbols that exist only on the pinned branch. nvfp4/nvfp4_moe do not: upstream 0.6.1 ships both, so the
-# echo this replaces proved nothing about the ref that was built.
+# The symbols that exist only on the pinned branch. nvfp4/nvfp4_moe do not: upstream ships both (0.6.1 and 0.6.2
+# alike), so the echo this replaces proved nothing about the ref that was built.
 docker run --rm --entrypoint python3 "${IMAGE}" -c \
   "from tensorfold.vision.videos import load_videos; from tensorfold.families.qwen4_exp.cuda.bf16 import faces_8bit; print('[build] video input and 8-bit faces present')"
 echo "[build] done: ${IMAGE}"
