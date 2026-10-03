@@ -18,8 +18,26 @@ for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
            TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
+# The pack flag picks the arm: `scripts/serve.sh --exl3` (turboderp's pack) or `--nvfp4` (the Swift pack). It names
+# the arm in the image tag and selects its model directory and state directory, so two arms of one engine revision
+# cannot be confused in a tag, a deploy line or a result file. Without it, .env decides, as before.
+PACK=""
+for arg in "$@"; do
+  case "$arg" in --exl3|--nvfp4) PACK="${arg#--}" ;; esac
+done
 [[ -f .env ]] && set -a && . ./.env && set +a
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
+
+case "${PACK:-}" in
+  exl3)
+    MODEL="/models/exl3-405"
+    STATE_DIR="$HOME/.cache/swift-tensorfold/state-exl3-405"
+    IMAGE="${IMAGE/swift-tensorfold:*-/swift-tensorfold:exl3-}" ;;
+  nvfp4)
+    MODEL="${MODEL_NVFP4:-ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4}"
+    STATE_DIR="$HOME/.cache/swift-tensorfold/state"
+    IMAGE="${IMAGE/swift-tensorfold:*-/swift-tensorfold:nvfp4-}" ;;
+esac
 
 IMAGE="${IMAGE:-swift-tensorfold:local}"
 MODEL="${MODEL:-ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4}"
