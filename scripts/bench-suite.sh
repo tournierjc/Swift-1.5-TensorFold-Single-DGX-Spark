@@ -27,6 +27,9 @@ for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 IMAGE="${IMAGE:-swift-tensorfold:local}"
 NAME="${NAME:-swift-1.5}"
 PORT="${PORT:-8083}"
+# The lane counts to aggregate. The rig's arms have been 3-lane, so 1/2/3 is the default; an arm served with
+# another --parallel is worth its own point, and the highest count is where a lane-shared weight read shows.
+CLIENTS="${CLIENTS:-1 2 3}"
 ARM="${ARM:-${1:-arm-$(date +%Y%m%d-%H%M%S)}}"
 BASE="http://127.0.0.1:${PORT}"
 LOG="bench/${ARM}.log"
@@ -50,9 +53,9 @@ time curl -fsS -m 900 "${BASE}/v1/chat/completions" -H 'Content-Type: applicatio
   > /dev/null
 echo
 
-echo "--- aggregate, 1/2/3 clients, 1024-token replies, distinct prompts ---"
+echo "--- aggregate, ${CLIENTS// /, } clients, 1024-token replies, distinct prompts ---"
 docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 "${IMAGE}" \
-  /bench/aggregate.py --base "${BASE}" --model "${NAME}" --tokens 1024 --clients 1 2 3
+  /bench/aggregate.py --base "${BASE}" --model "${NAME}" --tokens 1024 --clients ${CLIENTS}
 echo
 
 echo "--- client-side speed, 512-token replies, 2 rounds ---"
