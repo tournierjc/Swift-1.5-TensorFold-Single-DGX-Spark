@@ -443,6 +443,15 @@ The NVFP4 column is two runs of that arm (`bench/after-063.log`, `bench/after-06
 faster at every count, on a first load with cold kernel caches, and it is the only arm measured here that
 opens a fourth lane. The quantized MTP head works: 13055 drafted, 8306 accepted (64%).
 
+**The e4m3 face copies do not pay on this pack.** The NVFP4 arm's own lever, built for the EXL3 loader on the fork (`exl3_mm.F16` takes the same `Mx8Linear.from_bf16` copy, with `prefill`/`__call__` split so a prompt keeps the stored rows), covers the two faces a round re-reads whole: the hyper-connections' `input_mix_weight_up` (625 MiB over 96 sites, 6.5 MiB each) and the PLE key/value projections (62 MiB). The *down* projections stay on the stored rows - their decode path sums fp32 K slices in order, and the copy's own matmul returns bf16 - and the DeltaNet `in_proj_a`/`in_proj_b` are 0.25 MiB each, nothing for a lane matmul to win. One image (`063-5f62ae7`), one `.env`, flag off against flag on:
+
+| `TENSORFOLD_FACES_FP8` | 1 client | 2 | 3 | rounds | drafted | accepted |
+| --- | --- | --- | --- | --- | --- | --- |
+| `0` (control) | 43.5 | 68.9 | 85.1 | 4900 | 9351 | 5880 (62.9%) |
+| `all` | 42.9 | 67.4 | 83.4 | 4871 | 9956 | 5922 (59.5%) |
+
+The last three columns are over each arm's whole suite run. The copies cost 1.4 to 2.2% at every lane count, outside the 0.3% this instrument repeats at, and buy nothing: the eligible faces are ~687 MiB of a ~6.5 GiB dense round, and at those shapes (10240x320, 10240x2560) the e4m3 lane's dequantisation costs more than the bytes it saves. Accepted *per round* is flat (1.200 against 1.216); the accepted *ratio* falls only because the chain drafted further under the changed stream mixing (1.91 to 2.04 drafts a round), which is what a coarser copy of the stream-mixing face does to the draft head's confidence. Not kept: the rig serves the flag off, and the engine change was dropped from `integration/0.6.3` (local recovery tag `backup/removed/e4m3-exl3-faces`, `5f62ae7`).
+
 **Quality against the NVFP4 arm** (`scripts/quality-suite.sh exl3-405 --compare
 bench/quality/nvfp4-ukisai-20261003-005959.json`; 43 frozen items scored through `/v1/decisions`, nothing
 generated):
