@@ -255,7 +255,9 @@ mean |d label_mass| 0.0000, 0 of 28 choices flipped**, 43 of 43 correct. Vision 
 a red clip answered `Rouge`, a blue image
 `Bleu`. The load difference is the warm/cold pair this rig always shows: 47.6 s with the control's kernels
 already in the state directory against 54.9 s on the first start of a revision whose sources differ, the JIT key
-carrying them.
+carrying them. Load time on this box is not only the JIT: restarting the *same* arm, its kernels already
+compiled, took 77.2 s, so the spread across these numbers is mostly the page cache under 107 GB of weights -
+compare load times warm against warm and cold against cold, or not at all.
 
 One row is **not** settled and is not published as a finding: the 2315-token `speed.py` prefill request took
 4.54 and 4.48 s on the control against 6.26 and 6.34 s on the new arm - consistent within each arm, invisible to
