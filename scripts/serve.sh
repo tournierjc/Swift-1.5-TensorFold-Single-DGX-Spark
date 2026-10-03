@@ -11,9 +11,10 @@ caller=()
 # Every knob docker_env forwards has to be listed here too: one that is not comes back from .env, and the
 # arm you asked for is not the arm you measured (TENSORFOLD_FACES_FP8=xall served .env's all, twice).
 for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
+           HF_DIR STATE_DIR MODELS_DIR \
            TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
            TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 \
-           TENSORFOLD_VISION_WORKSPACE_MIB; do
+           TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
@@ -66,8 +67,13 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # and 0.6.2 alike) whatever the tower's own estimate says, and the reserve is counted against the startup
 # admission, so an unset value plans ~2.7 GiB more than this rig measured with. 1280 is what this rig sets
 # (measured peaks: 0.76 GiB an image, 0.83 GiB a video).
+# TENSORFOLD_VISION_WEIGHTS is the one variable the serving environment cannot infer: an EXL3 pack keeps its
+# vision tower in a quantized sidecar the model index does not list (turboderp's packs ship vision_k6.safetensors),
+# and the loader reads a *floating* tower. scripts/convert-vision.sh converts the sidecar once with the engine's
+# own tensorfold.vision.exl3_convert, and this variable points at that artifact; unset, an EXL3 arm with --vision
+# refuses to start (the engine names the converter since integration/0.6.3 + d31685e).
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_VISION_WORKSPACE_MIB; do
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 
