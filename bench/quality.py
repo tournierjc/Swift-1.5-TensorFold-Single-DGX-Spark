@@ -28,9 +28,9 @@ different tokenizer) are refused as incomparable instead of being averaged into 
 interpret. ``scripts/quality-suite.sh`` is the wrapper that enforces this and captures the served arm's
 own startup line beside the file.
 
-    python3 bench/quality.py --base http://127.0.0.1:8083 --arm nvfp4-ukisai \\
-        --json bench/quality/nvfp4-ukisai.json
-    python3 bench/quality.py --compare bench/quality/nvfp4-ukisai.json \\
+    python3 bench/quality.py --base http://127.0.0.1:8083 --arm nvfp4-swift \\
+        --json bench/quality/nvfp4-swift.json
+    python3 bench/quality.py --compare bench/quality/nvfp4-swift.json \\
         --json bench/quality/exl3-405.json
 """
 

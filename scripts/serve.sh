@@ -18,17 +18,19 @@ for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
            TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
-# The arm flag picks the pack: `scripts/serve.sh --exl3-405-turboderp`, `--nvfp4-swift`, `--nvfp4-radixart`,
+# The arm flag picks the pack: `scripts/serve.sh --exl3-405-turboderp`, `--nvfp4-swift`, `--nvfp4-radixark`,
 # `--nvfp4-nvidia`, `--nvfp4-local-inference-lab`, `--exl3-605-turboderp`, `--exl3-305-turboderp` - the arms of
 # `bench/arms.json`. It selects the model, the state directory and the runtime flags that arm needs, so two arms of
 # one engine revision cannot be confused in a deploy line or a result file. Without a flag, .env decides, as
 # before. `--exl3` still means the 4.05bpw pack; `--nvfp4` alone is refused rather than guessed, because three
-# packs answer to it now.
+# packs answer to it now. `--nvfp4-radixart` (the spelling this flag had before the typo was corrected) still
+# selects the RadixArk pack.
 ARM=""
 for arg in "$@"; do
   case "$arg" in
     --exl3)  ARM="exl3-405-turboderp"; echo "[serve] --exl3 is now --exl3-405-turboderp" ;;
-    --nvfp4) echo "[serve] --nvfp4 names no pack: use --nvfp4-swift, --nvfp4-radixart, --nvfp4-nvidia or --nvfp4-local-inference-lab" >&2; exit 2 ;;
+    --nvfp4) echo "[serve] --nvfp4 names no pack: use --nvfp4-swift, --nvfp4-radixark, --nvfp4-nvidia or --nvfp4-local-inference-lab" >&2; exit 2 ;;
+    --nvfp4-radixart) ARM="nvfp4-radixark"; echo "[serve] --nvfp4-radixart is a typo: use --nvfp4-radixark" ;;
     --*=*)   : ;;                      # a --flag=value belongs to the engine, not to this script
     --*)     ARM="${arg#--}" ;;
   esac
@@ -44,11 +46,11 @@ case "${ARM:-}" in
   exl3-605-turboderp)        MODEL="/models/exl3-605"; STATE_DIR="$RIG_CACHE/state-exl3-605-turboderp" ;;
   exl3-305-turboderp)        MODEL="/models/exl3-305"; STATE_DIR="$RIG_CACHE/state-exl3-305-turboderp" ;;
   nvfp4-swift)               MODEL="ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4";    STATE_DIR="$RIG_CACHE/state-nvfp4-swift" ;;
-  nvfp4-radixart)            MODEL="RadixArk/Qwen3.8-Flash-Next-NVFP4";            STATE_DIR="$RIG_CACHE/state-nvfp4-radixart" ;;
+  nvfp4-radixark)            MODEL="RadixArk/Qwen3.8-Flash-Next-NVFP4";            STATE_DIR="$RIG_CACHE/state-nvfp4-radixark" ;;
   nvfp4-nvidia)              MODEL="nvidia/Qwen3.8-Flash-Next-NVFP4";              STATE_DIR="$RIG_CACHE/state-nvfp4-nvidia" ;;
   nvfp4-local-inference-lab) MODEL="local-inference-lab/Qwen3.8-Flash-Next-NVFP4"; STATE_DIR="$RIG_CACHE/state-nvfp4-local-inference-lab" ;;
   "") : ;;
-  *)  echo "[serve] unknown arm '${ARM}': bench/arms.json lists them (--exl3-405-turboderp, --nvfp4-swift, --nvfp4-radixart, --nvfp4-nvidia, ...)" >&2; exit 2 ;;
+  *)  echo "[serve] unknown arm '${ARM}': bench/arms.json lists them (--exl3-405-turboderp, --nvfp4-swift, --nvfp4-radixark, --nvfp4-nvidia, ...)" >&2; exit 2 ;;
 esac
 # The tag is the caller's, not this script's: it is what a result file will say, so it must name the arm that
 # really served. Rewriting it silently hid exactly that (an image whose tag said `nvfp4` served the EXL3 pack).

@@ -8,8 +8,8 @@
 # beside it - the allocated window, the room the plan left the streams' caches, whether the n-gram tables
 # stayed resident - because two arms' numbers mean nothing without the profile they were produced under.
 #
-#   scripts/quality-suite.sh nvfp4-ukisai
-#   scripts/quality-suite.sh exl3-405 --compare bench/quality/nvfp4-ukisai-20261003-031500.json
+#   scripts/quality-suite.sh nvfp4-swift
+#   scripts/quality-suite.sh exl3-405 --compare bench/quality/nvfp4-swift-20261003-031500.json
 #
 # Run the benchmark against a server started *for this run*: stop the previous arm, serve the new one,
 # then run this. A missing --compare is the baseline case: the file it writes is what a later arm is

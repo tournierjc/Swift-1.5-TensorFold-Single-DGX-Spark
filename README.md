@@ -8,7 +8,7 @@ DGX Spark), the `.env` says which engine revision, and the flag says which quant
 
 **The arm the rig serves today is `exl3-405-turboderp`** — turboderp's `4.05bpw_h6_ng6` pack, 107.5 GB on disk,
 served as `MODEL=/models/exl3-405` with `scripts/serve.sh --exl3-405-turboderp`. The flag picks the pack and
-nothing else: `--nvfp4-swift` is the ukisai 186 GB reference the rig was built around, `--nvfp4-radixart` and
+nothing else: `--nvfp4-swift` is the ukisai 186 GB reference the rig was built around, `--nvfp4-radixark` and
 `--nvfp4-nvidia` are the RadixArk and NVIDIA exports of the same family, `--nvfp4-local-inference-lab` its
 MIXED_PRECISION sibling, and `--exl3-605-turboderp` / `--exl3-305-turboderp` the other two turboderp variants
 (`bench/arms.json` is the registry). An arm is a model, a state directory and an image tag
@@ -61,7 +61,7 @@ cp .env.sample .env                  # optional: edit paths, port, serve flags
 
 scripts/build.sh                     # build the image (local only, no registry)
 scripts/pull.sh                      # download the checkpoint: 186 GB, resumable
-scripts/serve.sh --exl3-405-turboderp  # foreground; Ctrl-C stops it (--nvfp4-swift, --nvfp4-radixart, ...)
+scripts/serve.sh --exl3-405-turboderp  # foreground; Ctrl-C stops it (--nvfp4-swift, --nvfp4-radixark, ...)
 scripts/smoke.sh                     # in another shell: health, /v1/models, one timed completion
 scripts/bench.sh                     # in another shell: prose, code and prefill speed
 ```
@@ -191,8 +191,8 @@ MODEL=/models/exl3-405 PARALLEL=4 \
 The arm names in that block are the registry's own keys, and they are what the flag takes: one name selects the
 model, the state directory (`~/.cache/tensorfold-spark/state-<arm>`) and the runtime flags that arm needs.
 `serve.sh` refuses an unknown arm, and refuses `--nvfp4` on its own on purpose — three packs answer to it
-(`--nvfp4-swift`, `--nvfp4-radixart`, `--nvfp4-nvidia`, `--nvfp4-local-inference-lab`); `--exl3` still means
-`--exl3-405-turboderp`. The image tag stays the caller's, because the tag is what a result file will quote: a tag
+(`--nvfp4-swift`, `--nvfp4-radixark`, `--nvfp4-nvidia`, `--nvfp4-local-inference-lab`); `--exl3` still means
+`--exl3-405-turboderp`, and the pre-correction `--nvfp4-radixart` still selects the RadixArk pack. The image tag stays the caller's, because the tag is what a result file will quote: a tag
 that does not name the arm being served earns a warning rather than a silent rewrite (an image tagged `nvfp4`
 served the EXL3 pack here once, and nothing said so).
 
