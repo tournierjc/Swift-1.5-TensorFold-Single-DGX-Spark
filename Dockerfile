@@ -14,7 +14,7 @@ FROM nvcr.io/nvidia/pytorch:26.07-py3
 # and the branches" section of the README lists what each one carries). Override to test another one:
 #   TF_REF=<sha|branch> scripts/build.sh  (or --build-arg TF_REF=...)
 ARG TF_REPO=https://github.com/tournierjc/TensorFold.git
-ARG TF_REF=f5de97f917b51735dec57459daad8bd736642cb9
+ARG TF_REF=7b5de8dd536ea0147baa890d6dd74ed2411b5797
 
 LABEL org.opencontainers.image.title="Swift 1.5 on TensorFold (single DGX Spark)" \
       org.opencontainers.image.source="https://github.com/tournierjc/Swift-1.5-TensorFold-Single-DGX-Spark" \

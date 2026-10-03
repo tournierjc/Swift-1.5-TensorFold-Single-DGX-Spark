@@ -14,6 +14,7 @@ for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
            HF_DIR STATE_DIR MODELS_DIR \
            TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
            TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 \
+           TENSORFOLD_EXL3_MIDM TENSORFOLD_EXL3_WC TENSORFOLD_EXL3_FOLD TENSORFOLD_EXL3_FOLD_BF16 TENSORFOLD_EXL3_FOLD2 TENSORFOLD_EXL3_FDIRECT_ROWS \
            TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
@@ -63,6 +64,14 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # rows (all: every BF16 face), which a round reads instead - see "8-bit dense faces" in the README. It is off
 # unless set: the copy is coarser than the rows, and the MTP head drafts less well against a body it was not
 # calibrated for, so measure it before keeping it.
+# The EXL3 kernel switches, read in the engine at import. `perf/exl3-midm-wc` takes the two kernels that
+# stop `linear_kernel` from decoding every tile once per 16-row pass: TENSORFOLD_EXL3_MIDM=0 keeps
+# `linear_kernel` at every row count, TENSORFOLD_EXL3_WC=0 leaves 17-128 rows to those mid-M kernels
+# instead of `linear_wc`. Both only bite from 17 rows up, which on this rig means three streams' verify
+# windows batched together - one stream is 7 rows and sees the old kernel either way. TENSORFOLD_EXL3_FOLD=0
+# puts the prompt back on the decode-rotation W_q path instead of the once-a-call folded W'' = diag(suh) H
+# W_q H / 128; FOLD_BF16 and FOLD2 pick that path's dtype and decoder. TENSORFOLD_EXL3_FDIRECT_ROWS is off
+# at 0, which is where upstream left it after trying 48 on: a call that short rebuilds W'' inside the GEMM.
 # TENSORFOLD_VISION_WORKSPACE_MIB is the tower's workspace *reserve*. The engine's own default is 4 GiB (0.6.1
 # and 0.6.2 alike) whatever the tower's own estimate says, and the reserve is counted against the startup
 # admission, so an unset value plans ~2.7 GiB more than this rig measured with. 1280 is what this rig sets
@@ -73,7 +82,7 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # own tensorfold.vision.exl3_convert, and this variable points at that artifact; unset, an EXL3 arm with --vision
 # refuses to start (the engine names the converter since integration/0.6.3 + d31685e).
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
+for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_EXL3_MIDM TENSORFOLD_EXL3_WC TENSORFOLD_EXL3_FOLD TENSORFOLD_EXL3_FOLD_BF16 TENSORFOLD_EXL3_FOLD2 TENSORFOLD_EXL3_FDIRECT_ROWS TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 
