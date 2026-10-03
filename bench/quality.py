@@ -168,8 +168,8 @@ def compare(reference: dict, current: dict) -> dict:
             "dlogp": abs(logprob(other, biggest) - logprob(row, biggest)),
             "d_label_mass": abs(other["label_mass"] - row["label_mass"]),
             "flip": (other["choice"] != row["choice"]) if other["type"] == "choice" else None,
-            "reference_choice": biggest if other["type"] == "choice" else None,
-            "choice": row["choice"],
+            "reference_choice": max(other["probabilities"], key=lambda name: other["probabilities"][name]),
+            "answer": max(row["probabilities"], key=lambda name: row["probabilities"][name]),
         })
     flips = [row["flip"] for row in rows if row["flip"] is not None]
     summary = {
@@ -270,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         for row in result["rows"]:
             print(f"| {row['id']} | {row['jsd']:.4f} | {row['dlogp']:.4f} | {row['d_label_mass']:.4f} | "
                   f"{'flip' if row['flip'] else ('same' if row['flip'] is not None else '-')} | "
-                  f"{row['reference_choice'] or '-'} -> {row['choice'] or row['score'] or '-'} |")
+                  f"{row['reference_choice']} -> {row['answer']} |")
         summary = result["summary"]
         print(f"\nagainst {args.compare}: mean jsd {summary['mean_jsd']:.4f} (max {summary['max_jsd']:.4f}), "
               f"mean |dlogp| {summary['mean_dlogp']:.4f} (max {summary['max_dlogp']:.4f}), "
