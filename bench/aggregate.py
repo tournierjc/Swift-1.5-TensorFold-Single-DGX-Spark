@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Aggregate decode rate over N concurrent clients against a running serve.
 
-    docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 swift-tensorfold:local \\
+    docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 tensorfold-spark:local \\
       /bench/aggregate.py --base http://127.0.0.1:8083 --model qwen3.8-flash-next --clients 1 2 3
 
 A round is weight-bound, so the lanes share its reads and the aggregate is the number that shows it. Two rules

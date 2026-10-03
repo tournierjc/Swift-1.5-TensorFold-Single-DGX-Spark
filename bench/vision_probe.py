@@ -2,7 +2,7 @@
 """Ask a running serve about media, and generate what it is asked about.
 
     # a solid red PNG, a black-banded 2048x2048 PNG, or a 2 s all-red clip, in one go
-    docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 swift-tensorfold:local \\
+    docker run --rm --network host -v "$PWD/bench:/bench" --entrypoint python3 tensorfold-spark:local \\
       /bench/vision_probe.py --base http://127.0.0.1:8083 --model qwen3.8-flash-next --cases image video
 
 Needs `--vision` on the server, and at least two lanes (the engine refuses visual input below that). The clip is
