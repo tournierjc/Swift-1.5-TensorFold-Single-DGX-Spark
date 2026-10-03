@@ -225,6 +225,37 @@ curl -fsS http://127.0.0.1:8083/v1/chat/completions \
 
 ## Status of the engine under test
 
+### Measured on the pinned 0.6.4 revision
+
+`integration/0.6.4` (`53ceb12`) is upstream 0.6.4 (`6ea5ade`) plus the twelve units replayed byte-identically
+from the 0.6.3 integration branch (24 files, +2243/-72, patch-ids matching), so the A/B below - not the rebase
+log - is what says whether the new base costs anything. It was built on the rig as
+`tensorfold-spark:exl3-405-turboderp-53ceb12` and measured against the revision it replaces, both arms served
+fresh from the same `.env`, four lanes, two passes each, one bench for both:
+
+| Arm | Image | Load | 1 client | 2 clients | 3 clients | 4 clients |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `7906eaa` (the revision it replaces) | `tensorfold-spark:exl3-405-turboderp-7906eaa` | 47.6 s | 42.6 / 44.7 | 68.2 / 70.2 | 84.0 / 86.2 | 111.2 / 110.2 tok/s |
+| `integration/0.6.4` (`53ceb12`) | `tensorfold-spark:exl3-405-turboderp-53ceb12` | 54.9 s | 48.9 / 42.5 | 70.2 / 70.9 | 79.1 / 87.3 | 110.0 / 109.7 tok/s |
+
+Each cell is the two passes in order - means 43.7 / 69.2 / 85.1 / 110.7 against 45.7 / 70.6 / 83.2 / 109.8, i.e.
+inside the spread this rig shows on its own 1-client row, which moved 42.6 -> 48.9 between the two passes of one
+arm. **The rebase is also bit-exact at the served configuration**, which is the stronger statement: the engine's
+own counters after an identical suite are equal to the unit (6,785 rounds, 12,752 drafts, 8,087 accepted =
+63.4%, on both arms, repeated at double on the second pass because the same workload ran twice) and the
+`/v1/decisions` route agrees to the bit - 43/43 items correct on both, **no** argmax flip, mean |dP(chosen
+label)| **0.00000**, mean d`label_mass` **+0.00000**, and the same prompt token ids for every item (one chat
+template, one tokenizer). Vision passed on both: a red image and a red clip answered `Rouge`, a blue image
+`Bleu`. The load difference is the warm/cold pair this rig always shows: 47.6 s with the control's kernels
+already in the state directory against 54.9 s on the first start of a revision whose sources differ, the JIT key
+carrying them.
+
+One row is **not** settled and is not published as a finding: the 2315-token `speed.py` prefill request took
+4.54 and 4.48 s on the control against 6.26 and 6.34 s on the new arm - consistent within each arm, invisible to
+the aggregate, and unexplained by the counters, which are identical. The prompt path is exactly where 0.6.4
+absorbed work of its own (the PLE row prefetch's prompt half, retired from our branch by this rebase), so three
+runs a row are what would decide it.
+
 ### Measured on the pinned 0.6.3 revision
 
 The rig was rebuilt on `integration/0.6.3` (`f5de97f`, image `43be03b19d69`) and redeployed with the same

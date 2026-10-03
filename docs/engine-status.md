@@ -234,6 +234,24 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
   commit (`9b13c50`) removed it — while `docs/recipes/exl3.md` and the test that monkeypatches it still name it.
   That is a defect of the *old* revision too (`7906eaa` has no reader either), and `serve.sh` no longer forwards
   the variable.
+  - **No cost, and bit-exact rather than merely close.** Both pins served fresh on the same box from the same
+    `.env`, four lanes, two passes each: `tensorfold-spark:exl3-405-turboderp-7906eaa` (the revision it replaces)
+    **42.6 / 68.2 / 84.0 / 111.2** and **44.7 / 70.2 / 86.2 / 110.2** tok/s against
+    `tensorfold-spark:exl3-405-turboderp-53ceb12` (`integration/0.6.4`) **48.9 / 70.2 / 79.1 / 110.0** and
+    **42.5 / 70.9 / 87.3 / 109.7** at one to four clients - means 43.7 / 69.2 / 85.1 / 110.7 against
+    45.7 / 70.6 / 83.2 / 109.8, all inside the spread this rig shows on its own 1-client row (42.6 -> 48.9
+    between the two passes of one arm). The stronger statement is not the rate: the engine's own counters after an
+    identical suite are **equal to the unit** - 6,785 rounds, 12,752 drafts, 8,087 accepted (63.4%) on both arms,
+    doubling on the second pass because the same workload ran twice - and the `/v1/decisions` route agrees to the
+    bit: 43 of 43 items correct on both, **no** argmax flip, mean |dP(chosen label)| **0.00000**, mean
+    d`label_mass` **+0.00000**, the same prompt token ids for every item (one chat template, one tokenizer).
+    Vision passed on both: red image and red clip `Rouge`, blue image `Bleu`. Load 47.6 s with that revision's
+    kernels already in the state directory against 54.9 s on its first start - the JIT key carries the sources,
+    so a warm state directory is not warm across a revision change. One row is *not* settled and is not published
+    as a finding: the 2315-token `speed.py` prefill request took 4.54 and 4.48 s on the control against 6.26 and
+    6.34 s on the new arm - consistent within each arm, invisible to the aggregate, unexplained by the counters
+    (which are identical), and on the one path (the prompt) where 0.6.4 absorbed the PLE row prefetch's prompt
+    half. Three runs a row are what would decide it: the prefill row is this bench's noisiest.
 - **The 0.6.2 rebase.** 12 commits and 50 files (+1,487/−367) over 0.6.1's tip. The five branch commits replayed
   with **no conflict at all**, and their own diffstat is identical to the one they had on 0.6.1 (23 files,
   +1,912/−91): this rebase changes no line of the branch's work, which is exactly why the deployed A/B, not the
