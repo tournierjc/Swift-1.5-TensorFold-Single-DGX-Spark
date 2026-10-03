@@ -17,6 +17,24 @@
 # two revisions of one engine print the same startup lines and the tag is not evidence.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+
+# Refuse to measure a rig that is not idle. Two sessions share this box: on 2026-10-03 a sibling one built an
+# image and restarted the service in the middle of an A/B here, and the control arm came out 30x slow with its
+# aggregate dead on a refused connection - which reads as "the new revision is slower" until you look at
+# `docker ps`. A shared device is worse than no measurement, so this stops instead.
+busy=()
+while read -r cname cimage; do
+  [[ -z "${cname}" || "${cname}" == "tensorfold-spark" ]] && continue
+  busy+=("container ${cname} is up (${cimage})")
+done < <(docker ps --format '{{.Names}} {{.Image}}' | grep -E 'tensorfold-spark|swift-tensorfold' || true)
+pgrep -f 'docker build|buildkitd|nvcc|ninja' >/dev/null 2>&1 && busy+=("a build or a kernel compile is in flight")
+if (( ${#busy[@]} )); then
+  echo "[bench-suite] the rig is busy: refusing to bench"
+  printf '[bench-suite]   %s\n' "${busy[@]}"
+  echo "[bench-suite]   (numbers taken now would be the other load, not this arm)"
+  exit 3
+fi
+
 caller=()
 for var in IMAGE NAME PORT ARM; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
@@ -41,9 +59,12 @@ echo "--- what is serving ---"
 docker ps --format '{{.Names}} | {{.Image}} | {{.Status}}' | grep -E 'swift|tensorfold' || true
 served="$(docker ps --format '{{.Names}}' | grep -m1 tensorfold || true)"
 [[ -n "${served}" ]] && echo "served container: ${served}  image id $(docker inspect -f '{{.Image}}' "${served}")"
-# The serve's own startup lines, if its log is around: the allocated window and the vision reserve are the two
-# settings whose *effect* cannot be read from the flags that were passed.
-grep -hE "startup estimate|vision:|Flash Next on CUDA|loaded in" "${HOME}"/serve-*.log 2>/dev/null | tail -4
+# The serve's own startup lines, taken from the container that is actually serving and never from a glob of
+# every `serve-*.log` in $HOME: an older arm's lines read exactly like this one's, and the load time this suite
+# records has to be the load it measured (a stale `loaded in 44.6s` was once recorded against a container that
+# had taken 298.3s). The allocated window and the vision reserve are the two settings whose *effect* cannot be
+# read from the flags that were passed.
+[[ -n "${served:-}" ]] && docker logs "${served}" 2>&1 | grep -hE "startup estimate|vision:|Flash Next on CUDA|loaded in" | tail -4
 echo "--- health ---"
 curl -fsS -m 10 "${BASE}/health"; echo; echo
 
