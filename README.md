@@ -245,7 +245,10 @@ own counters after an identical suite are equal to the unit (6,785 rounds, 12,75
 63.4%, on both arms, repeated at double on the second pass because the same workload ran twice) and the
 `/v1/decisions` route agrees to the bit - 43/43 items correct on both, **no** argmax flip, mean |dP(chosen
 label)| **0.00000**, mean d`label_mass` **+0.00000**, and the same prompt token ids for every item (one chat
-template, one tokenizer). Vision passed on both: a red image and a red clip answered `Rouge`, a blue image
+template, one tokenizer). A third observation - scored after the A/B, against the container that was still
+serving that arm, through the suite's own `--compare` - reads the same: **mean jsd 0.0000, mean |dlogp| 0.0000,
+mean |d label_mass| 0.0000, 0 of 28 choices flipped**, 43 of 43 correct. Vision passed on both: a red image and
+a red clip answered `Rouge`, a blue image
 `Bleu`. The load difference is the warm/cold pair this rig always shows: 47.6 s with the control's kernels
 already in the state directory against 54.9 s on the first start of a revision whose sources differ, the JIT key
 carrying them.

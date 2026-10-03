@@ -244,7 +244,10 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
     identical suite are **equal to the unit** - 6,785 rounds, 12,752 drafts, 8,087 accepted (63.4%) on both arms,
     doubling on the second pass because the same workload ran twice - and the `/v1/decisions` route agrees to the
     bit: 43 of 43 items correct on both, **no** argmax flip, mean |dP(chosen label)| **0.00000**, mean
-    d`label_mass` **+0.00000**, the same prompt token ids for every item (one chat template, one tokenizer).
+    d`label_mass` **+0.00000**, the same prompt token ids for every item (one chat template, one tokenizer). A third
+    observation, taken after the A/B against the container that was still serving it and scored through the
+    suite's own `--compare`, reads the same: mean jsd 0.0000, mean |dlogp| 0.0000, 0 of 28 choices flipped, 43/43
+    correct.
     Vision passed on both: red image and red clip `Rouge`, blue image `Bleu`. Load 47.6 s with that revision's
     kernels already in the state directory against 54.9 s on its first start - the JIT key carries the sources,
     so a warm state directory is not warm across a revision change. One row is *not* settled and is not published

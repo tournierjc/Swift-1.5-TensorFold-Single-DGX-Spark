@@ -1,0 +1,4 @@
+[tensorfold] CUDA rank 0 startup estimate 75.53 GiB within 104.90 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
+[tensorfold] vision: image and video input, a 0.84 GiB tower with 1.25 GiB of workspace reserved
+[tensorfold] Flash Next on CUDA: 1 to 6 MTP drafts a round, a chain stops before a later draft under 60%; up to 4 streams, each growing to 262144 prompt/reply tokens while memory lasts (35.6 GiB free for their caches, 4.47 GiB for one at the full window), eager; int8 KV cache (fp16 scale per 32 values); n-gram tables read alongside the weights (0.0s after them), read again after warm-up in 2.7s (29.00 GiB of pages locked); 0 decode graphs captured; idle prompt pieces 2048 rows; prompt kernels warmed in 7.8s
+[tensorfold] serving qwen3.8-flash-next at http://0.0.0.0:8083/v1 on CUDA (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; prompts: bf16 activations; context: 262144; loaded in 54.9s)
