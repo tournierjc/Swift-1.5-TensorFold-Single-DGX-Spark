@@ -465,7 +465,8 @@ them: **the `qwen4_exp` image port**. Upstream 0.6.1 serves images on this famil
 patch — `EncodedVision`, `vision_config` and `image_positions` are byte-identical, and upstream's own
 `tests/cuda/test_flashnext_vision.py` asserts the names this port introduced (`pbuf.rope_rows`,
 `st.rope_delta`). What stays on the branch is the video half of that work, now its own branch
-`feat/vision-video` and its own commit in the pinned revision.
+`feat/vision-video` and its own commit in the pinned revision — both deleted on the 0.6.3 rebase, when
+upstream merged video itself.
 
 The rebase onto **upstream 0.6.2** (`56e2e3e`, 12 commits and 50 files) replayed the five changes with **no
 conflict at all** — the diffstat of the five is identical to the one they had on 0.6.1 — because upstream's work
@@ -487,7 +488,6 @@ but a MIXED_PRECISION sibling of it was refused outright on 0.6.1. And `--mtp-co
 | **`integration/0.6.3`** | `f5de97f917b51735dec57459daad8bd736642cb9` | **the pinned revision**: 0.6.3 + the 8-bit projection copies + the 80,014-id draft vocabulary. Upstream 0.6.3 merged the vision port whole, so video is no longer a branch commit; the PLE row prefetch and the 12-bit faces are deliberately not carried here (the 12-bit branch is kept for future work, see below) |
 | `integration/0.6.2` | `d26e09fbd723f73dba84b6c6c4c2b0816ce98c10` | the previously pinned revision: 0.6.2 + the 8-bit copies + video input + the 80,014-id draft vocabulary + the PLE row prefetch + the 12-bit decode faces |
 | `integration/0.6.1` | `808767fd479c6bd8dbb2eb68f2a3537f75e6d520` | the previously pinned revision, on 0.6.1's base: what the rig measured before this rebase |
-| `feat/vision-video` | `3056063e3b05899d2e8b84769bedac19832efed7` | video input alone, on 0.6.1 — **superseded**: upstream 0.6.3 merged video (`588921b`), and the rig's only remaining delta was a stale 64 MiB clip cap against upstream's deliberate 16 MiB one |
 | `integration/0.6.0` | `c3fa14f4cdd2454d32326c6bc2845a71cb76e7b6` | the 0.6.0 rebase, two rebases back |
 | `feat/vision-qwen4-exp` | `eda6477` | the 8-bit projection copies alone, rebased onto 0.6.3 (the branch used to carry the whole vision port; images went upstream in 0.6.1, video in 0.6.3) |
 | `feat/mtp-draft-vocab` | `65aaf68` | the 80,014-id MTP draft vocabulary, rebased onto 0.6.3 (upstream still ships the unreduced 79,591-id list) |
@@ -500,7 +500,9 @@ but a MIXED_PRECISION sibling of it was refused outright on 0.6.1. And `--mtp-co
 The rebase onto **upstream 0.6.3** (`9356df5`, 81 commits and 163 files over 0.6.2) changed what the branch
 carries rather than how it carries it. Upstream merged the vision port whole — `588921b feat(vision cuda): Flash
 Next takes video input`, plus the visual-token budget and the tower offload — so **video left the branch**: the
-video commit was dropped in the replay, and `feat/vision-video` is superseded. Two changes stay, both still
+video commit was dropped in the replay, and `feat/vision-video` is superseded — its only remaining
+delta was a stale 64 MiB clip cap against upstream's deliberate 16 MiB one — so the branch is deleted;
+its head stays on the tag `backup/removed/feat_vision-video` (`3056063`). Two changes stay, both still
 absent from 0.6.3 by symbol: the 8-bit faces (`TENSORFOLD_FACES_FP8` / `faces_8bit`) and the reduced
 `draft_vocab.txt` (80,014 ids against upstream's 79,591). Two do not: the **PLE row prefetch** and the **12-bit
 decode faces** are not integrated here. Both still rebase cleanly onto 0.6.3 and both branches are kept (the
