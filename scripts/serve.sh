@@ -36,8 +36,8 @@ done
 [[ -f .env ]] && set -a && . ./.env && set +a
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 
-# Everything this rig owns lives under one cache root named after the rig, not after a checkpoint: the state
-# directories of the arms sit beside the HF cache instead of under `~/.cache/swift-tensorfold`.
+# Everything this rig owns lives under one cache root named after the rig, not after a checkpoint or an arm:
+# the per-arm state directories sit beside the HF cache, and nothing outside this root is read or written.
 RIG_CACHE="${RIG_CACHE:-$HOME/.cache/tensorfold-spark}"
 case "${ARM:-}" in
   exl3-405-turboderp)        MODEL="/models/exl3-405"; STATE_DIR="$RIG_CACHE/state-exl3-405-turboderp" ;;
