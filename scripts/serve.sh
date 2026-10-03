@@ -7,15 +7,15 @@ cd "$(dirname "$0")/.."
 # knobs these scripts document, and sourcing .env with `set -a` after the caller's environment silently
 # replaced them (a build asked for 1911880 came out as .env's pinned b4bf826, and the image it produced was
 # the pinned one). The values that were in the environment are put back over .env's.
+# The variables the engine reads from its environment and this launcher forwards. ONE list, used three times:
+# the caller's values are put back over .env from it, the container gets an -e for each, and an arm's own
+# registry flags are checked against it. Two lists that drift are how a switch is asked for and never reaches
+# the process - the arm then serves as something else and nothing says so.
+FORWARDED=(TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM
+           TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_EXL3_MIDM TENSORFOLD_EXL3_WC TENSORFOLD_EXL3_FOLD
+           TENSORFOLD_EXL3_FOLD_BF16 TENSORFOLD_EXL3_FOLD2 TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS)
 caller=()
-# Every knob docker_env forwards has to be listed here too: one that is not comes back from .env, and the
-# arm you asked for is not the arm you measured (TENSORFOLD_FACES_FP8=xall served .env's all, twice).
-for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS \
-           HF_DIR STATE_DIR MODELS_DIR \
-           TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF \
-           TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 \
-           TENSORFOLD_EXL3_MIDM TENSORFOLD_EXL3_WC TENSORFOLD_EXL3_FOLD TENSORFOLD_EXL3_FOLD_BF16 TENSORFOLD_EXL3_FOLD2 \
-           TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
+for var in IMAGE MODEL NAME HOST PORT CONTEXT PARALLEL EXTRA_ARGS HF_DIR STATE_DIR MODELS_DIR "${FORWARDED[@]}"; do
   [[ -n "${!var:-}" ]] && caller+=("${var}=${!var}")
 done
 # The arm flag picks the pack: `scripts/serve.sh --exl3-405-turboderp`, `--nvfp4-swift`, `--nvfp4-radixark`,
@@ -36,6 +36,46 @@ for arg in "$@"; do
   esac
 done
 [[ -f .env ]] && set -a && . ./.env && set +a
+# The arm's runtime flags come from `bench/arms.json`, so they cannot drift from the registry, and they are
+# applied *over* .env: a .env written for another arm (this rig's carries the EXL3 switches) must not decide how
+# this one is served - `--nvfp4-swift` on it used to serve the NVFP4 arm without TENSORFOLD_FACES_FP8=all, the
+# largest lever that arm has, in silence. The caller's own environment still wins: those values are put back on
+# the next line. A registry that cannot be read is a refusal, not a silent fallback, because the flags it holds
+# are the difference between the arm asked for and the arm served.
+if [[ -n "${ARM:-}" ]]; then
+  registry="$(dirname "$0")/../bench/arms.json"
+  if [[ ! -f "$registry" ]]; then
+    echo "[serve] ${registry} is missing: an arm asked for by flag cannot be configured without the registry that defines its flags. Restore it, or serve from .env with no arm flag." >&2
+    exit 2
+  else
+    arm_flags="$(python3 - "${ARM}" "$registry" <<'PY'
+import json, sys
+arm, path = sys.argv[1], sys.argv[2]
+try:
+    arms = json.load(open(path)).get("arms", {})
+except Exception as exc:
+    sys.exit(f"[serve] cannot read {path}: {exc}")
+entry = arms.get(arm)
+if entry is None:
+    sys.exit(f"[serve] '{arm}' is not one of {path}'s arms")
+for flag in entry.get("flags") or []:
+    if not flag or "=" not in flag:
+        sys.exit(f"[serve] {arm} declares a malformed flag: {flag!r}")
+    print(flag)
+PY
+)" || exit 2
+    while IFS= read -r kv; do
+      [[ -n "$kv" ]] || continue
+      var="${kv%%=*}"
+      if [[ " ${FORWARDED[*]} " != *" ${var} "* ]]; then
+        echo "[serve] arm '${ARM}' needs ${var}, which this launcher does not forward: add it to FORWARDED, or the flag is declared and never reaches the process" >&2
+        exit 2
+      fi
+      export "${kv?}"
+      echo "[serve] ${ARM} sets ${kv}"
+    done <<< "$arm_flags"
+  fi
+fi
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 
 # Everything this rig owns lives under one cache root named after the rig, not after a checkpoint or an arm:
@@ -131,7 +171,7 @@ echo "[serve] the first start compiles kernels into ${STATE_DIR}; the 186 GB sna
 # own tensorfold.vision.exl3_convert, and this variable points at that artifact; unset, an EXL3 arm with --vision
 # refuses to start (the engine names the converter since integration/0.6.3 + d31685e).
 docker_env=()
-for var in TORCH_USE_CUDA_DSA CUDA_LAUNCH_BLOCKING PYTORCH_CUDA_ALLOC_CONF TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSORFOLD_EXL3_MIDM TENSORFOLD_EXL3_WC TENSORFOLD_EXL3_FOLD TENSORFOLD_EXL3_FOLD_BF16 TENSORFOLD_EXL3_FOLD2 TENSORFOLD_VISION_WORKSPACE_MIB TENSORFOLD_VISION_WEIGHTS; do
+for var in "${FORWARDED[@]}"; do
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}")
 done
 

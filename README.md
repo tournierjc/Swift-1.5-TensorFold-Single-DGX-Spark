@@ -189,7 +189,11 @@ MODEL=/models/exl3-405 PARALLEL=4 \
 ```
 
 The arm names in that block are the registry's own keys, and they are what the flag takes: one name selects the
-model, the state directory (`~/.cache/tensorfold-spark/state-<arm>`) and the runtime flags that arm needs.
+model, the state directory (`~/.cache/tensorfold-spark/state-<arm>`) and the runtime flags that arm needs -
+`flags` in `bench/arms.json` are applied over `.env`, so a `.env` written for one arm cannot decide how another
+is served, while a value you export yourself still wins. `scripts/selftest-arms.sh` asserts exactly that
+contract without a GPU, a container or this rig's `.env`: it dispatches every arm through a `docker` stub in a
+scratch tree and prints the engine-visible environment the container would have been given.
 `serve.sh` refuses an unknown arm, and refuses `--nvfp4` on its own on purpose — three packs answer to it
 (`--nvfp4-swift`, `--nvfp4-radixark`, `--nvfp4-nvidia`, `--nvfp4-local-inference-lab`); `--exl3` still means
 `--exl3-405-turboderp`, and the pre-correction `--nvfp4-radixart` still selects the RadixArk pack. The image tag stays the caller's, because the tag is what a result file will quote: a tag
