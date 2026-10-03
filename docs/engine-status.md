@@ -423,6 +423,29 @@ the arm this rig serves: 107.5 GB on disk (63.47 GiB resident weights, 36.36 GiB
 
 Same tokens, drafts, acceptances and rounds at every lane count, and no speed for it: 0.3% either way inside noise, `decode_seconds_total` +0.15% at three lanes and -0.13% at four. The host round-trips were real and are gone, but they were worth about what the steps the cutoff now drafts and discards cost. The EXL3 recipe's own win came from a *blocking* 1.65 ms x ndt memcpy of per-step tables, which this engine's staging never had: the port transfers the removal, not the number. Not integrated, and the branch is dropped: its head is held on a local tag `backup/removed/mtp-device-chain` (`88206d9`) alone, the fork no longer carries it, and the rig serves `d31685e` as before.
 
+**The EXL3 verify kernels transfer; the folded prompt path does not.** `perf/exl3-midm-wc` (`7906eaa`) carries
+upstream's #260: `linear_kernel` decodes every tile again for each 16-row pass, so from 17 rows up the mid-M kernels
+take a call (16 rows a CTA to 48, 32 beyond), and for 4- and 6-bit `mul1` layers `linear_wc` decodes each column tile
+once into mma fragments, while the prompt gains a folded `W'' = diag(suh) H W_q H / 128` path - one `unpack_fold2` a
+call instead of the `rot_in` pass. Three arms, one image, the switches read back out of the running container:
+
+| arm | 4 clients | prefill | decode | rounds | drafted | accepted | acc. | probe sha |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `MIDM=0 WC=0 FOLD=0` | 98.1 | 6.918 s | 424.371 s | 6881 | 12947 | 8182 | 63.2% | `62e193201341` |
+| `MIDM=1 WC=1 FOLD=1` | 94.4 | 6.627 s | 431.448 s | 7089 | 13091 | 7988 | 61.0% | `98251a209ef8` |
+| `MIDM=1 WC=1 FOLD=0` | 98.8 | 6.790 s | 424.387 s | 6881 | 12947 | 8182 | 63.2% | `62e193201341` |
+
+The third arm's counters are the control's to the unit - 15090 completion tokens, 6881 rounds, 12947 drafted, 8182
+accepted, the same token hash - so the two kernels are `linear_kernel`'s bits at the served level and not only in the
+unit tests, and they are worth +0.7% at four clients: they only engage from 17 rows up, which here is three or four
+streams' verify windows batched, a small slice of a round.
+
+`FOLD` pays in the model's behaviour rather than in the kernel. Its own arithmetic is 4.2% faster on prefill and the
+round 1.3% faster (424.371 s / 6881 against 431.448 s / 7089), but the folded bits are not the `W_q` path's - upstream
+says so, and the probe's token hash moves with them - so the token stream is a different one and draft acceptance fell
+2.2 points behind it, and the aggregate with it. `qwen4_exp` does not opt in (`Workspace()`), and the kernels stay on
+by default; `TENSORFOLD_EXL3_FOLD=1` remains upstream's lever if a future head drafts better against folded bits.
+
 The 139 s load is a first load with a fresh `STATE_DIR`: five CUDA extensions were compiled
 (`tensorfold_exl3_linear_v3`, `qwen4_exp_gdn_io`, `gdn_v2`, `exl3_experts_v1`, `qmm_v5`). Later starts reuse
 them. The arm's own directory and state dir are what keep it from being confused with the cached arm:
