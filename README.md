@@ -474,7 +474,7 @@ in this release lands elsewhere: Flash Next at 64k-128k *on Macs*, the 27B's GDN
 launch on CUDA, the GLM-5.3 checkpoint credit and its mixed-bit EXL3 refusal, and a set of server fixes (a line a
 request and the done line on the CUDA server, the client-gone check past descriptor 1023, no `.partial.safetensors`
 left by an interrupted snapshot write, one GPU-generation reading). None of the files the branch owns
-(`families/qwen4_exp/cuda/*`, `vision/*`, `host_table.py`, `server/messages.py`, `server/prompts.py`) is among
+(`families/qwen4_exp/cuda/*`, `vision/*`, `server/messages.py`, `server/prompts.py`) is among
 them, and **none of the five is upstream in 0.6.2** — checked by symbol, not by subject:
 `TENSORFOLD_FACES_FP8`, `TENSORFOLD_FACES_12BIT`, `TENSORFOLD_PLE_PREFETCH`, `vision/videos.py` and
 `families/qwen4_exp/cuda/draft_vocab.txt` are still absent there. Two entries of the release matter to this rig
@@ -493,9 +493,11 @@ but a MIXED_PRECISION sibling of it was refused outright on 0.6.1. And `--mtp-co
 | `feat/mtp-draft-vocab` | `65aaf68` | the 80,014-id MTP draft vocabulary, rebased onto 0.6.3 (upstream still ships the unreduced 79,591-id list) |
 | `cursor/ple-row-prefetch-0ff8` | `497ca8d` | the PLE row prefetch: a round asks for its n-gram pages while the GPU drafts — rebased onto 0.6.3, **not** integrated (measured no value) |
 | `cursor/lossless-12bit-faces-0ff8` | `32ecbe5` | the 12-bit shared-exponent decode faces — lossless, bit-exact, 0.83x the stored bytes — rebased onto 0.6.3 and **kept for future improvements, not integrated**. A lossless *8-bit* face is impossible: sign+mantissa is already 8 bits, and measured over four real faces 0.00% of 32-deep K-groups share one exponent, so an 8-bit shared-exponent face escapes 100% of groups and costs more than the raw BF16 |
-| `pr/host-table-rows-by-file` | `79aa2a06c7ca52ade88a479f33149fcda55906ae` | a round's few n-gram rows read by file over the pool, not one after another (#103, closed unmerged) |
 | `main` | `9356df5c424b0c36b7737e37873a6f968b08de79` | upstream 0.6.3, realigned |
-| `cursor/lossless-12bit-faces-1ba6` | `410d2ffad389f5248cb5ac652714eb749823fc7a` | the same 12-bit prototype under an older spelling (`kind=` where `-0ff8` uses `face=`), on the pre-0.6.0 base: kept for the record, superseded |
+
+Superseded branches are deleted rather than left in the list: `feat/vision-video` (`3056063`), whose
+change upstream absorbed; `pr/host-table-rows-by-file` (`79aa2a0`), #103 closed unmerged; and the redundant 12-bit
+spelling `cursor/lossless-12bit-faces-1ba6` (`410d2ff`). Each head stays reachable on a `backup/removed/*` tag.
 
 The rebase onto **upstream 0.6.3** (`9356df5`, 81 commits and 163 files over 0.6.2) changed what the branch
 carries rather than how it carries it. Upstream merged the vision port whole — `588921b feat(vision cuda): Flash

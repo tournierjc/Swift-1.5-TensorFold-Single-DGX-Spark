@@ -214,7 +214,7 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
   64k-128k *on Macs*, the 27B's GDN tree kernel and DFlash2 drafter launch on CUDA, the GLM-5.3 checkpoint credit
   and its mixed-bit EXL3 refusal, and the CUDA server's own fixes (`cuda/http.py`, `cuda/server.py`,
   `engine/prefix_snapshots.py`, `server/cancellation.py`, `server/scheduler.py`) — the branch's files
-  (`families/qwen4_exp/cuda/*`, `vision/*`, `host_table.py`, `server/messages.py`, `server/prompts.py`) are not
+  (`families/qwen4_exp/cuda/*`, `vision/*`, `server/messages.py`, `server/prompts.py`) are not
   among them. Checked before the rebase, by symbol rather than by subject: **none of the five is upstream in
   0.6.2** — `TENSORFOLD_FACES_FP8`, `TENSORFOLD_FACES_12BIT`, `TENSORFOLD_PLE_PREFETCH`, `vision/videos.py` and
   `families/qwen4_exp/cuda/draft_vocab.txt` are all still absent there. Two release entries do touch this rig's
@@ -295,8 +295,10 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
   longer overlaid from this repository: it is a commit on the pinned branch, byte-identical
   (`8facf56e11ad522ca8ba1d396755b6ce7cc98f2bf226498780fcc7806231c192`), and the build asserts the installed
   package's own file instead of copying one in. Another branch, `pr/host-table-rows-by-file` (#103, closed
-  unmerged), keeps the round's n-gram rows read by file over the pool; it is **not** in the pinned branch, so
-  it is not in the served image.
+  unmerged), kept the round's n-gram rows read by file over the pool; it was never in the pinned branch, so it
+  was never in the served image. That branch is deleted now, its head on the tag
+  `backup/removed/pr_host-table-rows-by-file` (`79aa2a0`), together with the redundant 12-bit spelling
+  `cursor/lossless-12bit-faces-1ba6` (`410d2ff`, tag `backup/removed/cursor_lossless-12bit-faces-1ba6`).
 - **The rebase's one defect, and how it surfaced.** 0.6.0 split the attention kernels into a wrapper and a
   per-head (per-block) worker — `_attn_prep`/`_prep_row` in `glue.py`, `_pool`/`_pool_block` in
   `attention.py` — and the vision port's rotary parameters (`ROPE`, `DELTA`, `MODE`, `S1`, `S2`) merged into
