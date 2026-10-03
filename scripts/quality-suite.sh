@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 
 BASE="${BASE:-http://127.0.0.1:8083}"
 MODEL="${MODEL:-qwen3.8-flash-next}"
-NAME="${NAME:-swift-tensorfold}"
+NAME="${NAME:-qwen3.8-flash-next}"
 arm="${1:?usage: quality-suite.sh <arm> [quality.py options]}"
 shift
 

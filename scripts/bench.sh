@@ -13,8 +13,8 @@ done
 [[ -f .env ]] && set -a && . ./.env && set +a
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 
-IMAGE="${IMAGE:-swift-tensorfold:local}"
-NAME="${NAME:-swift-1.5}"
+IMAGE="${IMAGE:-tensorfold-spark:local}"
+NAME="${NAME:-qwen3.8-flash-next}"
 PORT="${PORT:-8083}"
 TOKENS="${TOKENS:-512}"
 

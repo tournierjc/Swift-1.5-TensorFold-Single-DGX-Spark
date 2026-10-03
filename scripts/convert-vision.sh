@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-IMAGE="${IMAGE:-swift-tensorfold:local}"
+IMAGE="${IMAGE:-tensorfold-spark:local}"
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 ARMS="${ARMS:-bench/arms.json}"
 arm="${1:?usage: convert-vision.sh <arm>}"

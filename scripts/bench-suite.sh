@@ -3,7 +3,7 @@
 # scripts/serve.sh runs, once per arm, so the two logs compare line for line.
 #
 #   scripts/bench-suite.sh before-061            # writes bench/before-061.log, bench/before-061-speed.json
-#   IMAGE=swift-tensorfold:local scripts/bench-suite.sh after-062
+#   IMAGE=tensorfold-spark:local scripts/bench-suite.sh after-062
 #
 # What it runs, in this order, and why this order:
 #   a discard pass  -- the rig's rule: the first pass after a load is cold, and an undeclared transient
@@ -24,8 +24,8 @@ done
 [[ -f .env ]] && set -a && . ./.env && set +a
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 
-IMAGE="${IMAGE:-swift-tensorfold:local}"
-NAME="${NAME:-swift-1.5}"
+IMAGE="${IMAGE:-tensorfold-spark:local}"
+NAME="${NAME:-qwen3.8-flash-next}"
 PORT="${PORT:-8083}"
 # The lane counts to aggregate. The rig's arms have been 3-lane, so 1/2/3 is the default; an arm served with
 # another --parallel is worth its own point, and the highest count is where a lane-shared weight read shows.

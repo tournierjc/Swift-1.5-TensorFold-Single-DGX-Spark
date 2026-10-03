@@ -1,7 +1,7 @@
 {
   "_comment": "One entry per quantization arm of the same model family. `dir` is a directory under MODELS_DIR and is what the engine serves: turboderp's EXL3 variants are branches of one repo, and the engine's cache resolver falls back to the newest config-bearing snapshot when refs/main carries no weights, so a repo id would serve whichever variant was downloaded last.",
   "arms": {
-    "nvfp4-ukisai": {
+    "nvfp4-swift": {
       "repo": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4",
       "revision": null,
       "dir": null,
@@ -21,17 +21,27 @@
       "vision": "floating tower inside the shards",
       "note": "in the engine's tested list; 106 GB, i.e. a different face/table treatment than ukisai's 186 GB"
     },
-    "nvfp4-radixark": {
+    "nvfp4-nvidia": {
+      "repo": "nvidia/Qwen3.8-Flash-Next-NVFP4",
+      "revision": null,
+      "dir": "nvfp4-nvidia",
+      "format": "modelopt NVFP4",
+      "size_gb": null,
+      "flags": ["TENSORFOLD_FACES_FP8=all"],
+      "vision": "floating tower inside the shards",
+      "note": "the vendor's own ModelOpt export of this family; not in the engine's tested list yet, so measure before trusting it"
+    },
+    "nvfp4-radixart": {
       "repo": "RadixArk/Qwen3.8-Flash-Next-NVFP4",
       "revision": null,
-      "dir": "nvfp4-radixark",
+      "dir": "nvfp4-radixart",
       "format": "modelopt NVFP4",
       "size_gb": null,
       "flags": ["TENSORFOLD_FACES_FP8=all"],
       "vision": "floating tower inside the shards",
       "note": "in the engine's tested list"
     },
-    "exl3-405": {
+    "exl3-405-turboderp": {
       "repo": "turboderp/Qwen3.8-Flash-Next-exl3",
       "revision": "4.05bpw_h6_ng6",
       "dir": "exl3-405",
@@ -41,7 +51,7 @@
       "vision": "quantized sidecar vision_k6.safetensors -> scripts/convert-vision.sh -> TENSORFOLD_VISION_WEIGHTS",
       "note": "68.3 GB of shards + 39.04 GB of n-gram rows in one I16[320001536,61] tensor (1 scale + 160x6 bits = the engine's NgramTable codec); MTP head quantized in shard 9; published mean KL vs BF16 0.0067"
     },
-    "exl3-605": {
+    "exl3-605-turboderp": {
       "repo": "turboderp/Qwen3.8-Flash-Next-exl3",
       "revision": "6.05bpw_h6_ng6",
       "dir": "exl3-605",
@@ -51,7 +61,7 @@
       "vision": "quantized sidecar -> scripts/convert-vision.sh -> TENSORFOLD_VISION_WEIGHTS",
       "note": "the near-lossless anchor arm (published KL 0.0031, noise floor 0.00249); 139 GB, so it streams more of itself"
     },
-    "exl3-305": {
+    "exl3-305-turboderp": {
       "repo": "turboderp/Qwen3.8-Flash-Next-exl3",
       "revision": "3.05bpw_h5_ng5",
       "dir": "exl3-305",

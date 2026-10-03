@@ -4,6 +4,12 @@ The long form behind the README: the engine versions, the changes carried on top
 load, and every benchmark table this rig has taken. The README states the short version and the numbers the rig
 runs at today; where a figure here differs, the README's is the newer one.
 
+**Names.** The rig was called `swift-tensorfold` while it served the Swift 1.5 NVFP4 arm and nothing else; it now
+serves whichever arm the flag picks, so the name is generic: repo `TensorFold-Single-DGX-Spark`, image
+`tensorfold-spark:<arm>-<sha>`, container `tensorfold-spark`, cache root `~/.cache/tensorfold-spark/<arm>`. Table
+entries and command transcripts below that predate the rename keep the `swift-tensorfold:*` tag they were taken
+with — those images are still on the box, and rewriting an old tag would make a past artifact un-nameable.
+
 ## Status of the engine under test
 
 Built and checked on the DGX Spark this rig targets:
@@ -196,17 +202,38 @@ own ids before the verify is the change that closes prose, and it is a hot-loop 
 ## Checkpoint and engine detail (moved out of the README)
 
 - Engine pinned by the `Dockerfile` as `ARG TF_REF`:
-  `f5de97f917b51735dec57459daad8bd736642cb9`, `tournierjc/TensorFold@integration/0.6.3` — upstream
-  `ashhart/TensorFold@9356df5` (0.6.3) plus the rig's own changes, one commit each: the 8-bit projection
-  copies and the 80,014-id draft vocabulary. Upstream 0.6.3 merged the vision port whole, so video left the
-  branch; the PLE row prefetch and the 12-bit decode faces are deliberately not carried (the 12-bit branch is
-  kept for future work). The README's "Engine revision and the branches" lists every branch and its head.
-  History: `integration/0.6.2` (`d26e09f`, upstream 0.6.2 `56e2e3e`) before it,
+  `53ceb126d5d54e9193245bcc74130fc1d81cf46f`, `tournierjc/TensorFold@integration/0.6.4` — upstream
+  `ashhart/TensorFold@6ea5ade` (0.6.4) plus the rig's own twelve changes, one commit each, 24 files and
+  +2243/−72: an 8-bit copy for the projections a round re-reads (`TENSORFOLD_FACES_FP8`), the 80,014-id draft
+  vocabulary, the vision loader naming the EXL3 sidecar's converter, and the nine EXL3 kernel commits — the
+  rig's port of the *open* upstream PR [ashhart/TensorFold#260](https://github.com/ashhart/TensorFold/pull/260)
+  (verify windows of 17-128 rows decoding each tile once per 16 or 32 rows, `linear_wc` for 4- and 6-bit mul1
+  layers, `W''` with both rotations folded in, the layer-major prompt scope) plus the two `qwen4_exp` opt-in
+  commits. Upstream 0.6.3 merged the vision port whole, so video left the branch; the 12-bit decode faces are
+  deliberately not carried (the branch is kept for future work), and the PLE row prefetch was retired on this
+  rebase — upstream 0.6.4 absorbed its prompt half (`TF_FLASH_STAGE_AHEAD`) and added `cuda/ngram_pages.py` for
+  the pages themselves. The README's "Engine revision and the branches" lists every branch and its head.
+  History: `integration/0.6.3` (`d31685e`, upstream 0.6.3 `9356df5`; the release's earlier head `f5de97f` is
+  what the 0.6.3 A/B below was measured on) before it,
+  `integration/0.6.2` (`d26e09f`, upstream 0.6.2 `56e2e3e`) before that,
   `integration/0.6.1` (`808767fd`, upstream 0.6.1 `17c73e1`) before that, and before that
   the rig served `191188075bca56a7c71074a79375eb4c1cb22e1c`, `ashhart/TensorFold@main` (0.3.6.3,
   upstream PR [ashhart/TensorFold#67](https://github.com/ashhart/TensorFold/pull/67) merged as 0.3.6.3) and
   before that the 0.3.6.2 `nvfp4-flash-next` branch, then 0.5.0 with three PRs on top, then 0.6.0
   (`c3fa14f4`, `integration/0.6.0`) — the speed tables below were taken on 0.5.0, not on 0.6.x.
+- **The 0.6.4 rebase.** 12 commits and 24 files (+2243/−72) over 0.6.4's tip, replayed with **no conflict at
+  all**; patch-ids identical, so the rebase changes no line of the branch's own work and the deployed A/B — not
+  the rebase log — is what says whether the new base costs anything. The one rig commit the rebase touched is
+  on another branch: `fix/mtp-cache-degrade`, where 0.6.4 had just split the absorber, so the fix now spans
+  `multi.py` and `multi_fill.py` (the same 143 insertions and 17 deletions, 5 files instead of 4). Checked by
+  symbol: **none of the twelve is upstream in 0.6.4** — `faces_8bit`, `cuda.exl3.linear.MODE`,
+  `cuda.exl3.prefill.FOLD`, `unpack_fold2`, `linear_wc` and the 80,014-id `draft_vocab.txt` are all still absent
+  there. What 0.6.4 changed is elsewhere (two-rank CUDA, `tensorfold plan`, the process-footprint gauge,
+  tree-attention partials folded by absolute position, n-gram page pinning), and it is also where the rig's
+  `fdirect` switch finally died: the flag has no reader in the served tree — the rig's own layer-major prompt
+  commit (`9b13c50`) removed it — while `docs/recipes/exl3.md` and the test that monkeypatches it still name it.
+  That is a defect of the *old* revision too (`7906eaa` has no reader either), and `serve.sh` no longer forwards
+  the variable.
 - **The 0.6.2 rebase.** 12 commits and 50 files (+1,487/−367) over 0.6.1's tip. The five branch commits replayed
   with **no conflict at all**, and their own diffstat is identical to the one they had on 0.6.1 (23 files,
   +1,912/−91): this rebase changes no line of the branch's work, which is exactly why the deployed A/B, not the
@@ -452,7 +479,7 @@ them. The arm's own directory and state dir are what keep it from being confused
 `tensorfold pull` takes a repo id and the cache resolver falls back to the newest config-bearing snapshot,
 so the variants of this repo must be addressed as directories (`bench/arms.json`).
 
-**The gate is the window, and it is granted.** `scripts/preflight-arm.sh exl3-405 --streams 4 --context
+**The gate is the window, and it is granted.** `scripts/preflight-arm.sh exl3-405-turboderp --streams 4 --context
 262144 --vision`, on the idle budget, reports 4 streams fitting at 77.92 GiB of 105.17 with `window 262144
 (native 262144, asked 262144, explicit True)` - no clamp. The NVFP4 arm's third lane is its last: asking it for
 four comes back with `estimated largest fitting prompt-plus-reply window: 246909 tokens`. The lanes share one
@@ -484,7 +511,7 @@ opens a fourth lane. The quantized MTP head works: 13055 drafted, 8306 accepted 
 
 The last three columns are over each arm's whole suite run. The copies cost 1.4 to 2.2% at every lane count, outside the 0.3% this instrument repeats at, and buy nothing: the eligible faces are ~687 MiB of a ~6.5 GiB dense round, and at those shapes (10240x320, 10240x2560) the e4m3 lane's dequantisation costs more than the bytes it saves. Accepted *per round* is flat (1.200 against 1.216); the accepted *ratio* falls only because the chain drafted further under the changed stream mixing (1.91 to 2.04 drafts a round), which is what a coarser copy of the stream-mixing face does to the draft head's confidence. Not kept: the rig serves the flag off, and the engine change was dropped from `integration/0.6.3` (local recovery tag `backup/removed/e4m3-exl3-faces`, `5f62ae7`).
 
-**Quality against the NVFP4 arm** (`scripts/quality-suite.sh exl3-405 --compare
+**Quality against the NVFP4 arm** (`scripts/quality-suite.sh exl3-405-turboderp --compare
 bench/quality/nvfp4-ukisai-20261003-005959.json`; 43 frozen items scored through `/v1/decisions`, nothing
 generated):
 

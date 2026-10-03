@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-IMAGE="${IMAGE:-swift-tensorfold:local}"
+IMAGE="${IMAGE:-tensorfold-spark:local}"
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 ARMS="${ARMS:-bench/arms.json}"
 arm="${1:?usage: preflight-arm.sh <arm|path> [preflight-arm.py options]}"
@@ -46,8 +46,8 @@ for var in TENSORFOLD_SKIP_WARM TENSORFOLD_NVFP4_MOE TENSORFOLD_FACES_FP8 TENSOR
   [[ -n "${!var:-}" ]] && docker_env+=(-e "${var}=${!var}")
 done
 
-if docker ps --format '{{.Names}}' | grep -q '^swift-tensorfold$'; then
-  echo "[preflight-arm] WARNING: swift-tensorfold is up and holds the device: the budget below is not idle"
+if docker ps --format '{{.Names}}' | grep -q '^tensorfold-spark$'; then
+  echo "[preflight-arm] WARNING: tensorfold-spark is up and holds the device: the budget below is not idle"
 fi
 
 # Sizing an arm before its bytes are on disk means a stub directory: files of the right size with their

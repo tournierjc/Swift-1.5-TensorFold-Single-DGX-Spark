@@ -14,15 +14,15 @@ done
 [[ -f .env ]] && set -a && . ./.env && set +a
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 
-IMAGE="${IMAGE:-swift-tensorfold:local}"
+IMAGE="${IMAGE:-tensorfold-spark:local}"
 MODEL="${MODEL:-ukisai/Swift-1.5-Qwen3.8-Flash-Next-NVFP4}"
-HF_DIR="${HF_DIR:-$HOME/.cache/swift-tensorfold/hf}"
+HF_DIR="${HF_DIR:-$HOME/.cache/tensorfold-spark/hf}"
 
 mkdir -p "${HF_DIR}"
 echo "[pull] ${MODEL} -> ${HF_DIR} (about 186 GB; the n-gram tables are most of it)"
 echo "[pull] HF_TOKEN is passed through when this shell sets it (gated or rate-limited repos need it)"
 
-docker run --rm --name swift-tensorfold-pull \
+docker run --rm --name tensorfold-spark-pull \
   -v "${HF_DIR}:/hf" \
   -e HF_TOKEN -e HUGGING_FACE_HUB_TOKEN \
   "${IMAGE}" pull "${MODEL}"

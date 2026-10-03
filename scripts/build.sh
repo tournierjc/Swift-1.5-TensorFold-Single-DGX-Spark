@@ -13,7 +13,7 @@ done
 [[ -f .env ]] && set -a && . ./.env && set +a
 for entry in ${caller[@]+"${caller[@]}"}; do export "$entry"; done
 
-IMAGE="${IMAGE:-swift-tensorfold:local}"
+IMAGE="${IMAGE:-tensorfold-spark:local}"
 args=()
 [[ -n "${TF_REF:-}" ]] && args+=(--build-arg "TF_REF=${TF_REF}")
 # TF_REPO too: the default is the fork's pinned branch, so without this another repository can never be
@@ -26,7 +26,9 @@ docker build "${args[@]}" -t "${IMAGE}" .
 echo "[build] installed package:"
 docker run --rm "${IMAGE}" --version
 # The symbols that exist only on the pinned branch. nvfp4/nvfp4_moe do not: upstream ships both (0.6.1 and 0.6.2
-# alike), so the echo this replaces proved nothing about the ref that was built.
+# alike), so the echo this replaces proved nothing about the ref that was built. The EXL3 switches are the same
+# class of evidence: upstream has no `MODE` in cuda/exl3/linear.py, so a pin that lost the #260 port would leave
+# the .env's MIDM/WC settings silently inert.
 docker run --rm --entrypoint python3 "${IMAGE}" -c \
-  "from tensorfold.vision.videos import load_videos; from tensorfold.families.qwen4_exp.cuda.bf16 import faces_8bit; print('[build] video input and 8-bit faces present')"
+  "from tensorfold.vision.videos import load_videos; from tensorfold.families.qwen4_exp.cuda.bf16 import faces_8bit; from tensorfold.cuda.exl3 import linear, prefill; assert isinstance(linear.MODE, int) and isinstance(prefill.FOLD, bool); print('[build] video input, 8-bit faces and the EXL3 switches present')"
 echo "[build] done: ${IMAGE}"
