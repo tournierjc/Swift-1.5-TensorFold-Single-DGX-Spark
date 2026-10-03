@@ -19,7 +19,9 @@ cd "$(dirname "$0")/.."
 
 BASE="${BASE:-http://127.0.0.1:8083}"
 MODEL="${MODEL:-qwen3.8-flash-next}"
-NAME="${NAME:-qwen3.8-flash-next}"
+# The *served container*, never the model id: this used to ask `docker logs qwen3.8-flash-next`, which is not a
+# container, so every provenance file said "no startup lines" while the lines sat in the container's own log.
+NAME="${NAME:-$(docker ps --format '{{.Names}}' | grep -m1 -E 'tensorfold-spark|swift-tensorfold' || true)}"
 arm="${1:?usage: quality-suite.sh <arm> [quality.py options]}"
 shift
 
@@ -32,7 +34,7 @@ if [ -e "$out" ]; then
 fi
 
 # The arm's own provenance. Its absence is worth knowing too, so a failure here is not fatal.
-docker logs "$NAME" 2>&1 | grep -E "startup estimate|Flash Next on CUDA|vision tower|mapped tables" \
+docker logs "$NAME" 2>&1 | grep -E "startup estimate|Flash Next on CUDA|vision: image|n-gram tables read|loaded in" \
   > "${out%.json}.startup.txt" || echo "[quality-suite] no startup lines from $NAME" > "${out%.json}.startup.txt"
 curl -sf "$BASE/v1/models" > "${out%.json}.models.json" 2>/dev/null || echo "{}" > "${out%.json}.models.json"
 echo "[quality-suite] serving arm lines:"
