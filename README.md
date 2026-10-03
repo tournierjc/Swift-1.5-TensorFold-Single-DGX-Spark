@@ -156,6 +156,39 @@ Port **8083** here (matches the hermes-agent / historical Spark OpenAI endpoint)
 The preflight figures, the memory budget the load fits in, and the earlier serving levers (`--ssd-experts`,
 `--ple-on-ssd`, the MTP draft window) are in [docs/engine-status.md](docs/engine-status.md).
 
+### Serving another arm
+
+`bench/arms.json` is the registry: one entry per quantization arm of the same family, with the repo, the
+revision, the directory under `MODELS_DIR` it is served from and the flags it needs. A **directory**, not a repo
+id, because the EXL3 variants are branches of one repo and the engine's cache resolver falls back to the newest
+config-bearing snapshot when `refs/main` carries no weights — a repo id would serve whichever variant was
+downloaded last.
+
+```bash
+scripts/pull-arm.sh exl3-405        # that branch into MODELS_DIR/exl3-405, then size and sha256 per file
+scripts/convert-vision.sh exl3-405  # the quantized vision sidecar -> the floating tower the loader reads
+scripts/preflight-arm.sh exl3-405 --streams 4 --context 262144 --vision --budget-gib 104.76
+MODEL=/models/exl3-405 PARALLEL=4 \
+  TENSORFOLD_VISION_WEIGHTS=/models/exl3-405/vision-f16.safetensors scripts/serve.sh
+```
+
+Three things the engine cannot do for a new arm, and why each has its own script:
+
+- **Pull a branch.** `tensorfold pull` takes a repo id (and the resolver hazard above). `pull-arm.sh` fetches the
+  revision into its own directory with `curl -C -` — measured 10-11 MB/s here against ~1.7 for the Hub client's
+  xet path — and verifies every file against the Hub's own sha256, because nothing downstream re-reads those
+  bytes. The CDN drops a connection every ~30 s on this host, so a file is retried until its size matches rather
+  than being left partial.
+- **Dequantize the vision tower.** An EXL3 pack keeps it in `vision_k6.safetensors`, outside the model index,
+  and the loader reads a floating tower: `convert-vision.sh` runs the engine's own converter once, and the
+  artifact records its source hash and codec. `TENSORFOLD_VISION_WEIGHTS` names it at serve time; `serve.sh`
+  forwards it now (before, the variable was in neither list and was silently dropped, serving without a tower).
+- **Size the serving plan before loading it.** `preflight.py` sizes the *single-stream, non-vision* plan.
+  `preflight-arm.sh` mirrors the engine's own `admit()` for the profile asked for — streams, context, KV dtype,
+  draft depth, vision — and reads the receipt back, including whether the window came back clamped. On this arm
+  it answers the question that decides the deployment: **four lanes at the native 262144 fit, at 77.92 GiB of
+  104.76**, where the 186 GB NVFP4 arm refuses the fourth (98.31 GiB at three lanes).
+
 ## Endpoint
 
 ```bash
@@ -327,6 +360,37 @@ first token's decode sits inside TTFT, so it is a slight underestimate), and the
 **Against a thinking server the bench reports `None` for TTFT and decode:** a 1024-token budget is spent
 entirely on `reasoning_tokens`, so no `content` delta is emitted and the client sees no first token. Read
 `reasoning_content` as well, raise `max_tokens`, or point the bench at a `--no-thinking` server.
+
+## Measuring quality
+
+Speed is not quality, and a chat conversation cannot measure quality: it samples, so one arm answers
+differently twice. `bench/quality.py` scores a frozen item set through `/v1/decisions`, which resolves one
+prefill per question and returns the *answer labels' logits* without generating a token, thinking forced off.
+Those logits are an exact function of the prompt, so the same item set replays on every arm and what differs
+between two runs is the engine, not the harness.
+
+```bash
+scripts/quality-suite.sh nvfp4-ukisai      # the baseline: bench/quality/<arm>-<stamp>.json
+# stop the arm, serve the next one, then
+scripts/quality-suite.sh exl3-405 --compare bench/quality/nvfp4-ukisai-<stamp>.json
+```
+
+`quality-suite.sh` keeps a run attributable: one file per run, never overwritten, and beside it the startup
+lines of the arm that served it — the allocated window, the room the plan left the streams' caches, whether the
+n-gram tables stayed resident. Two arms' numbers mean nothing without the profile they were produced under.
+
+Per item it records the softmax over the label logits, `label_mass` (the label set's share of the
+full-vocabulary distribution, so it is independent of temperature and of how many options were offered) and the
+argmax. From those a comparison reports the per-token `|dlogp|` that published quant tables quote, a
+Jensen-Shannon divergence in nats, and the flip rate. The items (`bench/quality-items.json`, version 1: 43 across
+factual recall, arithmetic, truthfulness, French usage and rated claims) are hashed as they are *sent*, and a
+comparison refuses to proceed when two runs disagree about the tokens — the failure mode of a changed chat
+template or another tokenizer, which would otherwise be averaged into a number nobody can read.
+
+`label_mass` is the sensitive column. Unambiguous facts sit at 0.99; the yes/no items that ask about a common
+misconception sit at 0.40-0.65 because the mass is outside the two offered labels — the model wants to explain
+rather than answer. That is the part of the behaviour a quantization moves first, so read the comparison column
+by column, not only as a headline. The NVFP4 baseline at 43 items: accuracy 43/43, mean label_mass 0.933 (min 0.404).
 
 ## MTP draft vocabulary
 
