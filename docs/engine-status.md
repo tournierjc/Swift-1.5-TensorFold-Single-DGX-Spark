@@ -414,6 +414,15 @@ the arm this rig serves: 107.5 GB on disk (63.47 GiB resident weights, 36.36 GiB
     Flash Next on CUDA: 1 to 6 MTP drafts a round, a chain stops before a later draft under 60%; up to 4 streams, each growing to 262144 prompt/reply tokens while memory lasts (34.9 GiB free for their caches, 4.47 GiB for one at the full window), eager; int8 KV cache (fp16 scale per 32 values); n-gram tables read alongside the weights (0.0s after them); 0 decode graphs captured; idle prompt pieces 2048 rows; prompt kernels warmed in 74.9s
     serving qwen3.8-flash-next at http://0.0.0.0:8083/v1 on CUDA (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 262144; loaded in 139.0s)
 
+**The staged draft chain measures even.** Branch `perf/mtp-device-chain` (`88206d9`) keeps a draft chain's tokens on the device: the draw runs there (`cuda.sampling.choose_rows_device`, the host hash bit for bit), each drawn token is written where the next step's MTP head embeds it, and `mtp_stage` takes that row - so the pinned rebuild, its H2D copy and the `b.staged` wait they are guarded by leave every drafted token. The counters say that port is exact, not close:
+
+| `TENSORFOLD_MTP_STAGED` | 1 client | 2 | 3 | 4 | rounds | drafted | accepted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `0` (control) | 43.7 | 68.9 | 85.1 | 106.2 | 4900 | 9351 | 5880 |
+| `1` | 43.8 | 68.8 | 84.8 | 106.2 | 4900 | 9351 | 5880 |
+
+Same tokens, drafts, acceptances and rounds at every lane count, and no speed for it: 0.3% either way inside noise, `decode_seconds_total` +0.15% at three lanes and -0.13% at four. The host round-trips were real and are gone, but they were worth about what the steps the cutoff now drafts and discards cost. The EXL3 recipe's own win came from a *blocking* 1.65 ms x ndt memcpy of per-step tables, which this engine's staging never had: the port transfers the removal, not the number. Not integrated - the branch is kept for the record and the rig serves `d31685e` as before.
+
 The 139 s load is a first load with a fresh `STATE_DIR`: five CUDA extensions were compiled
 (`tensorfold_exl3_linear_v3`, `qwen4_exp_gdn_io`, `gdn_v2`, `exl3_experts_v1`, `qmm_v5`). Later starts reuse
 them. The arm's own directory and state dir are what keep it from being confused with the cached arm:
