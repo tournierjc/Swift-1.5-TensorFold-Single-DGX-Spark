@@ -128,7 +128,11 @@ def logprob(row: dict, name: str) -> float:
 
 def load_run(path: str) -> dict:
     with open(path) as stream:
-        return json.load(stream)
+        loaded = json.load(stream)
+    if not isinstance(loaded, dict) or not isinstance(loaded.get("items"), dict):
+        raise SystemExit(f"[quality] {path} is not a quality run: no items map (--compare wants a file this "
+                         "harness wrote, not its .models.json or .startup.txt sibling)")
+    return loaded
 
 
 def check_comparable(reference: dict, current: dict) -> None:
@@ -138,7 +142,7 @@ def check_comparable(reference: dict, current: dict) -> None:
         if reference.get(key) != current.get(key):
             raise SystemExit(f"[quality] not comparable: {key} differs "
                              f"({reference.get(key)} != {current.get(key)})")
-    for row in current["items"]:
+    for row in current["items"].values():
         other = reference["items"].get(row["id"])
         if other is None:
             raise SystemExit(f"[quality] not comparable: {row['id']} is absent from the reference run")
@@ -153,9 +157,8 @@ def compare(reference: dict, current: dict) -> dict:
     """Per-item divergence and the summaries the arm report quotes."""
 
     rows = []
-    for row in current["items"]:
+    for row in current["items"].values():
         other = reference["items"][row["id"]]
-        gold = other.get("choice") or ""
         names = list(other["probabilities"])
         biggest = max(names, key=lambda name: other["probabilities"][name])
         rows.append({
