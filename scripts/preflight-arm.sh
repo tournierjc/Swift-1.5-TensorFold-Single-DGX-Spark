@@ -55,7 +55,7 @@ fi
 # are absolute host paths, so the targets are mounted at the same path:
 #   EXTRA_MOUNTS=/home/jct-spark/models:/home/jct-spark/models:ro scripts/preflight-arm.sh ~/probe/stub-405 ...
 extra=()
-for mount in ${EXTRA_MOUNTS//,/ }; do
+for mount in ${EXTRA_MOUNTS:-}; do
   [[ -n "$mount" ]] && extra+=(-v "$mount")
 done
 
