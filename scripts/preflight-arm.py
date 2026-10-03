@@ -10,6 +10,11 @@ It reads tensor headers and file sizes only: no weight byte is loaded, and it ru
 the checkpoint's files are on disk (header stubs of the right size answer the same question, see the
 rig's probe notes). On a unified-memory host the budget comes from /proc/meminfo's MemAvailable, so
 nothing else may be serving: stop the server first, or pass --budget-gib for a projection.
+
+The engine clamps a window silently only when it is *not* explicit - i.e. when the --context that was
+meant to be passed never reached it, which is how --parallel 3 --context 262144 once came back as the
+8192 that fit. This tool always passes --context explicitly, so a window that does not fit comes back as
+a refusal naming the largest fitting one instead.
 """
 from __future__ import annotations
 
@@ -102,11 +107,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"streams={streams}: REFUSED -> {type(exc).__name__}: {exc}")
             failed += 1
             continue
-        allocated = plan.get("allocated_window", plan.get("window"))
+        window = plan.get("context_window")
+        asked = plan.get("requested_context") or args.context
         print(f"streams={streams}: fits, estimate {plan['total_bytes_estimate'] / GIB:.2f} GiB, "
-              f"allocated window {allocated}, cache slots {plan.get('cache_slots')}")
-        if allocated is not None and allocated != args.context and args.context:
-            print(f"   WARNING: asked for {args.context} and allocated {allocated} - a silent clamp")
+              f"window {window} (native {plan.get('native_window')}, asked {asked}, "
+              f"explicit {plan.get('explicit_context')}), cache slots {plan['cache_slots']}")
+        print(f"   resident {plan['weight_bytes_estimate'] / GIB:.2f} GiB + mapped tables "
+              f"{plan['mapped_table_bytes'] / GIB:.2f} GiB (resident: {plan.get('mapped_tables_resident')}), "
+              f"full mapped working set {plan['full_mapped_working_set_bytes_estimate'] / GIB:.2f} GiB")
+        if asked and window and window < asked:
+            print(f"   WARNING: asked for {asked} and allocated {window} - a silent clamp")
             failed += 1
     return 1 if failed else 0
 
