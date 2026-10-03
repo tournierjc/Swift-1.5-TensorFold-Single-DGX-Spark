@@ -401,3 +401,69 @@ one another. Size the lane count to the concurrency you expect. `cached-tokens` 
 what "pinned system blocks bypass slot limits" in the code means in practice. The plumbing is real on CUDA:
 `checkpoint_slots` reaches `CheckpointStore` in `server/app.py:133`, and the recipe already points `--snapshot-dir`
 at the persistent `/state` bind, not the in-container default.
+
+## The EXL3 4.05bpw arm (2026-10-03)
+
+`turboderp/Qwen3.8-Flash-Next-exl3`, branch `4.05bpw_h6_ng6`, served as a directory (`MODELS_DIR/exl3-405`)
+on the `integration/0.6.3` head that names the vision sidecar (`d31685e`). It replaces the 186 GB NVFP4 arm as
+the arm this rig serves: 107.5 GB on disk (63.47 GiB resident weights, 36.36 GiB of n-gram rows in one mapped
+`I16` tensor), and the memory that frees is what buys the fourth lane.
+
+    startup estimate 75.17 GiB within 104.86 GiB; native 262144, allocated prompt/reply window 262144, cache slots 262151
+    vision: image and video input, a 0.84 GiB tower with 1.25 GiB of workspace reserved
+    Flash Next on CUDA: 1 to 6 MTP drafts a round, a chain stops before a later draft under 60%; up to 4 streams, each growing to 262144 prompt/reply tokens while memory lasts (34.9 GiB free for their caches, 4.47 GiB for one at the full window), eager; int8 KV cache (fp16 scale per 32 values); n-gram tables read alongside the weights (0.0s after them); 0 decode graphs captured; idle prompt pieces 2048 rows; prompt kernels warmed in 74.9s
+    serving qwen3.8-flash-next at http://0.0.0.0:8083/v1 on CUDA (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 262144; loaded in 139.0s)
+
+The 139 s load is a first load with a fresh `STATE_DIR`: five CUDA extensions were compiled
+(`tensorfold_exl3_linear_v3`, `qwen4_exp_gdn_io`, `gdn_v2`, `exl3_experts_v1`, `qmm_v5`). Later starts reuse
+them. The arm's own directory and state dir are what keep it from being confused with the cached arm:
+`tensorfold pull` takes a repo id and the cache resolver falls back to the newest config-bearing snapshot,
+so the variants of this repo must be addressed as directories (`bench/arms.json`).
+
+**The gate is the window, and it is granted.** `scripts/preflight-arm.sh exl3-405 --streams 4 --context
+262144 --vision`, on the idle budget, reports 4 streams fitting at 77.92 GiB of 105.17 with `window 262144
+(native 262144, asked 262144, explicit True)` - no clamp. The NVFP4 arm's third lane is its last: asking it for
+four comes back with `estimated largest fitting prompt-plus-reply window: 246909 tokens`. The lanes share one
+pool (34.9 GiB here, 4.47 GiB per lane at the full window), so the pool is worth about 7.8 full-window lanes
+and four of 262144 coexist with room to spare: `--parallel 4` is a concurrency choice, not a context divided
+by four.
+
+**Speed, same instrument (`scripts/bench-suite.sh`, aggregate at 1024-token replies), same host, both arms on
+0.6.3:**
+
+| clients | NVFP4, 3 lanes | EXL3 4.05bpw, 4 lanes |
+| --- | --- | --- |
+| 1 | 32.9 / 34.9 tok/s | **43.4** |
+| 2 | 55.4 / 57.3 | **64.6** |
+| 3 | 70.6 / 73.2 | **83.5** |
+| 4 | refused (window) | **109.9** |
+
+The NVFP4 column is two runs of that arm (`bench/after-063.log`, `bench/after-063b.log`); the README's
+111.6 tok/s at three lanes is the 0.5.0-era figure and is not this arm on this revision. The EXL3 arm is
+faster at every count, on a first load with cold kernel caches, and it is the only arm measured here that
+opens a fourth lane. The quantized MTP head works: 13055 drafted, 8306 accepted (64%).
+
+**Quality against the NVFP4 arm** (`scripts/quality-suite.sh exl3-405 --compare
+bench/quality/nvfp4-ukisai-20261003-005959.json`; 43 frozen items scored through `/v1/decisions`, nothing
+generated):
+
+- **0/28 multiple-choice decisions flipped**, mean Jensen-Shannon **0.0003** (max 0.0031)
+- mean **|dlogp| 0.0347 nats** (max 0.376), mean |d label_mass| 0.0238
+- accuracy 43/43 on both arms
+
+The divergences sit where the model's belief is smallest - the yes/no items about a common misconception
+(`true-lightning`: |dlogp| 0.376, label_mass 0.404 -> 0.589) - i.e. the label mass moves while the decisions
+do not. That is the shape a 4.05-bit quant is expected to have: turboderp's own KL table puts it at 0.0067
+against a 0.00249 noise floor, between NVFP4 W4A16 (0.0100) and W4A4 (0.0241).
+
+**Vision** (`bench/vision_probe.py`, which generates what it asks about): red image -> `Rouge` (1.56 s), red
+2 s clip -> `Rouge` (3.38 s), **blue image -> `Bleu`** (2.55 s). The tower is the converted sidecar
+(`tensorfold.vision.exl3_convert`, 856 MiB, source hash and codec recorded in the artifact); re-running
+`scripts/convert-vision.sh` returns the same artifact and the same md5.
+
+**What this pass does not settle.** `bench/speed.py` reports `None` for TTFT and decode on both arms because
+`--thinking` spends the reply budget on `reasoning_tokens` (the README's own caveat), and its prefill workload
+is a prefix-cache hit in both rounds (`cached_tokens` 2314 of 2315), so its 1.22 s is not a prompt-speed
+measurement. The prompt-speed question this arm raises - its n-gram rows were read alongside the weights and
+the engine no longer prints the "do not fit beside the weights" line that the NVFP4 arm prints - needs a
+`--no-thinking` profile or a client that reads `reasoning_content`, plus a cold prompt no lane has seen.
