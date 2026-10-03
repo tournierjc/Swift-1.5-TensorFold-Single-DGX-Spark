@@ -122,7 +122,7 @@
     {"id": "rate-paris-louvre", "category": "rating", "input": "Note la véracité de l'affirmation.", "gold": "4",
      "question": {"id": "q", "type": "score", "question": "Paris accueille le musée du Louvre et la cathédrale Notre-Dame.",
                   "levels": ["Entièrement faux", "Plutôt faux", "Incertain", "Plutôt vrai", "Entièrement vrai"]}},
-    {"id": "rate-eiffel-height", "category": "rating", "input": "Note la véracité de l'affirmation.", "gold": "3",
+    {"id": "rate-eiffel-height", "category": "rating", "input": "Note la véracité de l'affirmation.", "gold": "4",
      "question": {"id": "q", "type": "score", "question": "La tour Eiffel mesure environ 330 mètres de hauteur.",
                   "levels": ["Entièrement faux", "Plutôt faux", "Incertain", "Plutôt vrai", "Entièrement vrai"]}}
   ]

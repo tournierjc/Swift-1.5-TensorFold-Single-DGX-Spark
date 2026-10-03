@@ -61,10 +61,10 @@ def post(base: str, path: str, payload: dict, timeout: int = 600) -> dict:
         raise SystemExit(f"[quality] {path} refused the request ({exc.code}): {detail}") from exc
 
 
-def canonical(body: dict) -> str:
+def canonical(value: object) -> str:
     """The part of a response that must be bit-identical when the same item is replayed."""
 
-    return json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def answer_name(answer: dict) -> str:
@@ -183,6 +183,12 @@ def compare(reference: dict, current: dict) -> dict:
     return {"rows": rows, "summary": summary}
 
 
+def scored_projection(items: list[dict]) -> list[dict]:
+    """Only what is sent to the server: a harness-side annotation can be corrected without invalidating a run."""
+
+    return [{"id": item["id"], "input": item["input"], "question": item["question"]} for item in items]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Score a frozen item set through /v1/decisions.")
     parser.add_argument("--base", default="http://127.0.0.1:8083")
@@ -201,8 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     with open(args.items) as stream:
         frozen = json.load(stream)
     items = frozen["items"]
-    items_sha = hashlib.sha256(canonical(items).encode()).hexdigest()
-    print(f"[quality] {len(items)} items from {args.items} (sha256 {items_sha[:16]}) on {base}")
+    items_sha = hashlib.sha256(canonical(scored_projection(items)).encode()).hexdigest()
+    print(f"[quality] {len(items)} items from {args.items} (sha256 {items_sha[:16]} of what is scored) on {base}")
 
     if args.json:
         try:
