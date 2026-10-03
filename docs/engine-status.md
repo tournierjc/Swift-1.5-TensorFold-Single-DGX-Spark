@@ -421,7 +421,7 @@ the arm this rig serves: 107.5 GB on disk (63.47 GiB resident weights, 36.36 GiB
 | `0` (control) | 43.7 | 68.9 | 85.1 | 106.2 | 4900 | 9351 | 5880 |
 | `1` | 43.8 | 68.8 | 84.8 | 106.2 | 4900 | 9351 | 5880 |
 
-Same tokens, drafts, acceptances and rounds at every lane count, and no speed for it: 0.3% either way inside noise, `decode_seconds_total` +0.15% at three lanes and -0.13% at four. The host round-trips were real and are gone, but they were worth about what the steps the cutoff now drafts and discards cost. The EXL3 recipe's own win came from a *blocking* 1.65 ms x ndt memcpy of per-step tables, which this engine's staging never had: the port transfers the removal, not the number. Not integrated - the branch is kept for the record and the rig serves `d31685e` as before.
+Same tokens, drafts, acceptances and rounds at every lane count, and no speed for it: 0.3% either way inside noise, `decode_seconds_total` +0.15% at three lanes and -0.13% at four. The host round-trips were real and are gone, but they were worth about what the steps the cutoff now drafts and discards cost. The EXL3 recipe's own win came from a *blocking* 1.65 ms x ndt memcpy of per-step tables, which this engine's staging never had: the port transfers the removal, not the number. Not integrated, and the branch is dropped: its head is held on a local tag `backup/removed/mtp-device-chain` (`88206d9`) alone, the fork no longer carries it, and the rig serves `d31685e` as before.
 
 The 139 s load is a first load with a fresh `STATE_DIR`: five CUDA extensions were compiled
 (`tensorfold_exl3_linear_v3`, `qwen4_exp_gdn_io`, `gdn_v2`, `exl3_experts_v1`, `qmm_v5`). Later starts reuse
